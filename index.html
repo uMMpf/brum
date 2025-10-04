@@ -3,9 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="robots" content="noindex, nofollow">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
     <meta name="googlebot" content="noindex, nofollow">
+    <meta name="bingbot" content="noindex, nofollow">
+    <meta name="slurp" content="noindex, nofollow">
+    <meta name="duckduckbot" content="noindex, nofollow">
+    <meta name="baiduspider" content="noindex, nofollow">
+    <meta name="yandex" content="noindex, nofollow">
+    <meta name="anthropic-ai" content="noindex">
+    <meta name="claudebot" content="noindex">
+    <meta name="gptbot" content="noindex">
+    <meta name="chatgpt-user" content="noindex">
+    <meta name="ccbot" content="noindex">
+    <meta name="applebot" content="noindex">
     <title>Košarka brum brum 🚗</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23FF6B35' stroke='%23000' stroke-width='2'/><path d='M 50 2 Q 50 50 50 98' stroke='%23000' stroke-width='2' fill='none'/><path d='M 2 50 Q 50 50 98 50' stroke='%23000' stroke-width='2' fill='none'/><path d='M 15 15 Q 50 50 85 85' stroke='%23000' stroke-width='2' fill='none'/><path d='M 85 15 Q 50 50 15 85' stroke='%23000' stroke-width='2' fill='none'/></svg>">
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -123,13 +135,13 @@
                         {/* Djeca koja dolaze */}
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
                             <h2 className="text-lg font-bold mb-4">👦 Djeca koja dolaze</h2>
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto px-4 sm:px-0">
                                 <table className="w-full border-collapse border">
                                     <thead>
                                         <tr className="bg-blue-50">
-                                            <th className="border p-2">Dijete</th>
+                                            <th className="border p-2 text-center">Dijete</th>
                                             {practices.map(p => (
-                                                <th key={p.id} className="border p-2">
+                                                <th key={p.id} className="border p-2 text-center">
                                                     <div>{p.day}</div>
                                                     <div className="text-xs">{p.time}</div>
                                                 </th>
@@ -139,10 +151,13 @@
                                     <tbody>
                                         {children.map(child => (
                                             <tr key={child}>
-                                                <td className="border p-2 font-bold">{child}</td>
+                                                <td className="border p-2 font-bold text-center">{child}</td>
                                                 {practices.map(p => (
                                                     <td key={p.id} className="border p-2 text-center">
-                                                        {getAttendingChildren(p.id).includes(child) ? '✓' : '—'}
+                                                        {getAttendingChildren(p.id).includes(child) ? 
+                                                            <span className="text-green-600 font-bold text-xl">✓</span> : 
+                                                            <span className="text-gray-300">—</span>
+                                                        }
                                                     </td>
                                                 ))}
                                             </tr>
@@ -155,13 +170,13 @@
                         {/* Prijedlog vozača */}
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
                             <h2 className="text-lg font-bold mb-4">🚗 Prijedlog vozača</h2>
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto px-4 sm:px-0">
                                 <table className="w-full border-collapse border">
                                     <thead>
                                         <tr className="bg-green-50">
                                             <th className="border p-2">Smjer</th>
                                             {practices.map(p => (
-                                                <th key={p.id} className="border p-2">
+                                                <th key={p.id} className="border p-2 text-center">
                                                     <div>{p.day}</div>
                                                     <div className="text-xs">{p.time}</div>
                                                 </th>
@@ -177,7 +192,7 @@
                                                         <span className={`px-2 py-1 rounded text-sm ${getFamilyColor(assignments[`${p.id}-tamo`])}`}>
                                                             {assignments[`${p.id}-tamo`]}
                                                         </span>
-                                                    ) : '—'}
+                                                    ) : <span className="text-gray-400">—</span>}
                                                 </td>
                                             ))}
                                         </tr>
@@ -189,7 +204,7 @@
                                                         <span className={`px-2 py-1 rounded text-sm ${getFamilyColor(assignments[`${p.id}-nazad`])}`}>
                                                             {assignments[`${p.id}-nazad`]}
                                                         </span>
-                                                    ) : '—'}
+                                                    ) : <span className="text-gray-400">—</span>}
                                                 </td>
                                             ))}
                                         </tr>
@@ -201,13 +216,13 @@
                         {/* Dostupni vozači */}
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
                             <h2 className="text-lg font-bold mb-4">👥 Dostupni vozači</h2>
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto px-4 sm:px-0">
                                 <table className="w-full border-collapse border">
                                     <thead>
                                         <tr className="bg-gray-50">
                                             <th className="border p-2">Smjer</th>
                                             {practices.map(p => (
-                                                <th key={p.id} className="border p-2">
+                                                <th key={p.id} className="border p-2 text-center">
                                                     <div>{p.day}</div>
                                                     <div className="text-xs">{p.time}</div>
                                                 </th>
@@ -225,6 +240,9 @@
                                                                 {f}
                                                             </span>
                                                         ))}
+                                                        {getAvailableDrivers(p.id, 'tamo').length === 0 && (
+                                                            <span className="text-gray-400 text-xs">Nitko</span>
+                                                        )}
                                                     </div>
                                                 </td>
                                             ))}
@@ -239,6 +257,9 @@
                                                                 {f}
                                                             </span>
                                                         ))}
+                                                        {getAvailableDrivers(p.id, 'nazad').length === 0 && (
+                                                            <span className="text-gray-400 text-xs">Nitko</span>
+                                                        )}
                                                     </div>
                                                 </td>
                                             ))}
@@ -248,7 +269,7 @@
                             </div>
                         </div>
 
-                        <div className="flex gap-4 justify-center">
+                        <div className="flex gap-4 justify-center flex-wrap">
                             <button onClick={() => setShowResults(false)} className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600">
                                 Nazad
                             </button>
@@ -275,7 +296,7 @@
                     {/* Tablica 1: Djeca */}
                     <div className="bg-white rounded-lg shadow p-6 mb-6">
                         <h2 className="text-lg font-bold mb-4">👦 Koji dan će dijete ići na trening?</h2>
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto px-4 sm:px-0">
                             <table className="w-full border-collapse border">
                                 <thead>
                                     <tr className="bg-blue-50">
@@ -283,7 +304,7 @@
                                         {practices.map(p => {
                                             const isPast = isDateInPast(p.id);
                                             return (
-                                                <th key={p.id} className={`border p-2 ${isPast ? 'bg-gray-200' : ''}`}>
+                                                <th key={p.id} className={`border p-2 text-center ${isPast ? 'bg-gray-200' : ''}`}>
                                                     <div>{p.day}</div>
                                                     <div className="text-xs">{isPast ? '(završeno)' : p.time}</div>
                                                 </th>
@@ -307,8 +328,7 @@
                                                                 if (!isPast) toggleSelection(child, p.id, 'child');
                                                             }}
                                                             disabled={isPast}
-                                                            className="w-5 h-5 cursor-pointer"
-                                                            style={{ cursor: isPast ? 'not-allowed' : 'pointer' }}
+                                                            className={`w-5 h-5 ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                                         />
                                                     </td>
                                                 );
@@ -323,7 +343,7 @@
                     {/* Tablica 2: Vozači */}
                     <div className="bg-white rounded-lg shadow p-6 mb-6">
                         <h2 className="text-lg font-bold mb-4">🚗 Kada koja obitelj može voziti?</h2>
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto px-4 sm:px-0">
                             <table className="w-full border-collapse border">
                                 <thead>
                                     <tr className="bg-green-50">
@@ -331,7 +351,7 @@
                                         {practices.map(p => {
                                             const isPast = isDateInPast(p.id);
                                             return (
-                                                <th key={p.id} className={`border p-2 ${isPast ? 'bg-gray-200' : ''}`}>
+                                                <th key={p.id} className={`border p-2 text-center ${isPast ? 'bg-gray-200' : ''}`}>
                                                     <div>{p.day}</div>
                                                     <div className="text-xs">{isPast ? '(završeno)' : p.time}</div>
                                                 </th>
@@ -347,8 +367,8 @@
                                                 const isPast = isDateInPast(p.id);
                                                 return (
                                                     <td key={p.id} className="border p-2">
-                                                        <div className="flex gap-2 justify-center">
-                                                            <label className="flex flex-col items-center cursor-pointer">
+                                                        <div className="flex gap-3 justify-center">
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-green-50'}`}>
                                                                 <span className="text-xs mb-1">tamo</span>
                                                                 <input
                                                                     type="checkbox"
@@ -358,11 +378,10 @@
                                                                         if (!isPast) toggleSelection(family, p.id, 'tamo');
                                                                     }}
                                                                     disabled={isPast}
-                                                                    className="w-5 h-5 cursor-pointer"
-                                                                    style={{ cursor: isPast ? 'not-allowed' : 'pointer' }}
+                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                                                 />
                                                             </label>
-                                                            <label className="flex flex-col items-center cursor-pointer">
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-orange-50'}`}>
                                                                 <span className="text-xs mb-1">nazad</span>
                                                                 <input
                                                                     type="checkbox"
@@ -372,8 +391,7 @@
                                                                         if (!isPast) toggleSelection(family, p.id, 'nazad');
                                                                     }}
                                                                     disabled={isPast}
-                                                                    className="w-5 h-5 cursor-pointer"
-                                                                    style={{ cursor: isPast ? 'not-allowed' : 'pointer' }}
+                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                                                 />
                                                             </label>
                                                         </div>
