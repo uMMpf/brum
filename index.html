@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="googlebot" content="noindex, nofollow">
     <title>Košarka brum brum 🚗</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -25,7 +27,7 @@
             ];
 
             const children = ['Bartol', 'Ivano', 'Mak'];
-            const families = ['Ivanovi', 'Šipek', 'Marić'];
+            const families = ['Vlahović', 'Šipek', 'Marić'];
 
             const [selections, setSelections] = useState({});
             const [assignments, setAssignments] = useState({});
@@ -57,7 +59,7 @@
             };
 
             const getFamilyColor = (family) => {
-                if (family === 'Ivanovi') return 'bg-blue-100 text-blue-800';
+                if (family === 'Vlahović') return 'bg-blue-100 text-blue-800';
                 if (family === 'Šipek') return 'bg-purple-100 text-purple-800';
                 return 'bg-orange-100 text-orange-800';
             };
@@ -300,9 +302,13 @@
                                                         <input
                                                             type="checkbox"
                                                             checked={isSelected(child, p.id, 'child')}
-                                                            onChange={() => !isPast && toggleSelection(child, p.id, 'child')}
+                                                            onChange={(e) => {
+                                                                e.stopPropagation();
+                                                                if (!isPast) toggleSelection(child, p.id, 'child');
+                                                            }}
                                                             disabled={isPast}
-                                                            className="w-5 h-5"
+                                                            className="w-5 h-5 cursor-pointer"
+                                                            style={{ cursor: isPast ? 'not-allowed' : 'pointer' }}
                                                         />
                                                     </td>
                                                 );
@@ -342,24 +348,32 @@
                                                 return (
                                                     <td key={p.id} className="border p-2">
                                                         <div className="flex gap-2 justify-center">
-                                                            <label className="flex flex-col items-center">
+                                                            <label className="flex flex-col items-center cursor-pointer">
                                                                 <span className="text-xs mb-1">tamo</span>
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isSelected(family, p.id, 'tamo')}
-                                                                    onChange={() => !isPast && toggleSelection(family, p.id, 'tamo')}
+                                                                    onChange={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!isPast) toggleSelection(family, p.id, 'tamo');
+                                                                    }}
                                                                     disabled={isPast}
-                                                                    className="w-5 h-5"
+                                                                    className="w-5 h-5 cursor-pointer"
+                                                                    style={{ cursor: isPast ? 'not-allowed' : 'pointer' }}
                                                                 />
                                                             </label>
-                                                            <label className="flex flex-col items-center">
+                                                            <label className="flex flex-col items-center cursor-pointer">
                                                                 <span className="text-xs mb-1">nazad</span>
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isSelected(family, p.id, 'nazad')}
-                                                                    onChange={() => !isPast && toggleSelection(family, p.id, 'nazad')}
+                                                                    onChange={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!isPast) toggleSelection(family, p.id, 'nazad');
+                                                                    }}
                                                                     disabled={isPast}
-                                                                    className="w-5 h-5"
+                                                                    className="w-5 h-5 cursor-pointer"
+                                                                    style={{ cursor: isPast ? 'not-allowed' : 'pointer' }}
                                                                 />
                                                             </label>
                                                         </div>
