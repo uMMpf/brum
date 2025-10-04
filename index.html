@@ -18,6 +18,11 @@
     <meta name="applebot" content="noindex">
     <title>Košarka brum brum 🚗</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23FF6B35' stroke='%23000' stroke-width='2'/><path d='M 50 2 Q 50 50 50 98' stroke='%23000' stroke-width='2' fill='none'/><path d='M 2 50 Q 50 50 98 50' stroke='%23000' stroke-width='2' fill='none'/><path d='M 15 15 Q 50 50 85 85' stroke='%23000' stroke-width='2' fill='none'/><path d='M 85 15 Q 50 50 15 85' stroke='%23000' stroke-width='2' fill='none'/></svg>">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -28,6 +33,28 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
+
+        // Firebase Configuration - REPLACE WITH YOUR CONFIG
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+            projectId: "YOUR_PROJECT",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        let db = null;
+        try {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            db = firebase.database();
+        } catch (error) {
+            console.log("Firebase not configured yet. Using fallback localStorage.");
+        }
 
         const CarpoolApp = () => {
             const practices = [
@@ -55,17 +82,15 @@
                 const day = now.getDay();
                 const hour = now.getHours();
                 
-                // If Saturday after 15:00, advance to next week
                 if (day === 6 && hour >= 15) {
                     const nextWeek = new Date(now);
-                    nextWeek.setDate(now.getDate() + 2); // Move to Monday
+                    nextWeek.setDate(now.getDate() + 2);
                     return getMondayOfWeek(nextWeek);
                 }
                 
                 return getMondayOfWeek(now);
             };
 
-            // Format week range
             const formatWeekRange = (mondayDate) => {
                 const monday = new Date(mondayDate);
                 const sunday = new Date(monday);
@@ -82,29 +107,66 @@
                 return mondayDate.toISOString().split('T')[0];
             };
 
-            // Initialize state
             const [currentWeekStart, setCurrentWeekStart] = useState(getCurrentWeekStart());
             const [selectedWeekStart, setSelectedWeekStart] = useState(getCurrentWeekStart());
             const [weekHistory, setWeekHistory] = useState({});
             const [showResults, setShowResults] = useState(false);
+            const [showHistoryModal, setShowHistoryModal] = useState(false);
+            const [historyPage, setHistoryPage] = useState(0);
+            const [selectedDate, setSelectedDate] = useState('');
+            const [firebaseConnected, setFirebaseConnected] = useState(false);
 
-            // Check and auto-archive on load
+            // Load data from Firebase or localStorage
             useEffect(() => {
-                const checkAndArchive = () => {
-                    const newCurrentWeek = getCurrentWeekStart();
-                    const newCurrentKey = getWeekKey(newCurrentWeek);
-                    const oldCurrentKey = getWeekKey(currentWeekStart);
-                    
-                    if (newCurrentKey !== oldCurrentKey) {
-                        setCurrentWeekStart(newCurrentWeek);
-                        setSelectedWeekStart(newCurrentWeek);
+                const loadData = async () => {
+                    if (db) {
+                        try {
+                            const snapshot = await db.ref('weekHistory').once('value');
+                            const data = snapshot.val();
+                            if (data) {
+                                setWeekHistory(data);
+                                setFirebaseConnected(true);
+                            }
+                        } catch (error) {
+                            console.error("Firebase load error:", error);
+                            loadFromLocalStorage();
+                        }
+                    } else {
+                        loadFromLocalStorage();
                     }
                 };
-                
-                checkAndArchive();
+
+                const loadFromLocalStorage = () => {
+                    try {
+                        const saved = localStorage.getItem('carpoolHistory');
+                        if (saved) {
+                            setWeekHistory(JSON.parse(saved));
+                        }
+                    } catch (error) {
+                        console.error("LocalStorage load error:", error);
+                    }
+                };
+
+                loadData();
             }, []);
 
-            // Get current week data
+            // Save to Firebase and localStorage
+            const saveData = async (newHistory) => {
+                if (db && firebaseConnected) {
+                    try {
+                        await db.ref('weekHistory').set(newHistory);
+                    } catch (error) {
+                        console.error("Firebase save error:", error);
+                    }
+                }
+                
+                try {
+                    localStorage.setItem('carpoolHistory', JSON.stringify(newHistory));
+                } catch (error) {
+                    console.error("LocalStorage save error:", error);
+                }
+            };
+
             const getCurrentWeekData = () => {
                 const weekKey = getWeekKey(selectedWeekStart);
                 return weekHistory[weekKey] || { selections: {}, assignments: {}, lastGenerated: null };
@@ -115,12 +177,10 @@
             const assignments = weekData.assignments;
             const lastGenerated = weekData.lastGenerated;
 
-            // Check if viewing current (editable) week
             const isCurrentWeek = getWeekKey(selectedWeekStart) === getWeekKey(currentWeekStart);
             const isReadOnly = !isCurrentWeek;
 
             const isDateInPast = (practiceId) => {
-                // Only disable if viewing a past week
                 if (!isCurrentWeek) return true;
                 
                 const dayMap = { 'pon': 1, 'uto': 2, 'cet': 4, 'pet': 5, 'sub': 6 };
@@ -128,13 +188,8 @@
                 const today = now.getDay();
                 const hour = now.getHours();
                 
-                // Sunday: nothing is past
+                if (today === 6 && hour >= 15) return false;
                 if (today === 0) return false;
-                
-                // Saturday after 15:00: preparing next week, current week is locked
-                if (today === 6 && hour >= 15) return true;
-                
-                // Saturday before 15:00: Saturday practice not past yet
                 if (today === 6 && practiceId === 'sub') return false;
                 
                 return dayMap[practiceId] < today || (dayMap[practiceId] === today && practiceId !== 'sub');
@@ -142,14 +197,16 @@
 
             const updateWeekData = (newSelections, newAssignments, newLastGenerated) => {
                 const weekKey = getWeekKey(selectedWeekStart);
-                setWeekHistory(prev => ({
-                    ...prev,
+                const newHistory = {
+                    ...weekHistory,
                     [weekKey]: {
                         selections: newSelections || selections,
                         assignments: newAssignments || assignments,
                         lastGenerated: newLastGenerated !== undefined ? newLastGenerated : lastGenerated
                     }
-                }));
+                };
+                setWeekHistory(newHistory);
+                saveData(newHistory);
             };
 
             const toggleSelection = (item, day, type) => {
@@ -219,15 +276,13 @@
             const resetCurrentWeek = () => {
                 if (isReadOnly) return;
                 const weekKey = getWeekKey(selectedWeekStart);
-                setWeekHistory(prev => {
-                    const newHistory = { ...prev };
-                    delete newHistory[weekKey];
-                    return newHistory;
-                });
+                const newHistory = { ...weekHistory };
+                delete newHistory[weekKey];
+                setWeekHistory(newHistory);
+                saveData(newHistory);
                 setShowResults(false);
             };
 
-            // Get all weeks (current + history), sorted newest first
             const getAllWeeks = () => {
                 const weeks = new Set();
                 weeks.add(getWeekKey(currentWeekStart));
@@ -243,38 +298,171 @@
                 setShowResults(false);
             };
 
+            const handleDateSelect = () => {
+                if (!selectedDate) return;
+                const date = new Date(selectedDate);
+                const monday = getMondayOfWeek(date);
+                handleWeekChange(monday);
+            };
+
+            // History Modal
+            const ITEMS_PER_PAGE = 10;
+            const allWeeks = getAllWeeks();
+            const totalPages = Math.ceil(allWeeks.length / ITEMS_PER_PAGE);
+            const paginatedWeeks = allWeeks.slice(
+                historyPage * ITEMS_PER_PAGE,
+                (historyPage + 1) * ITEMS_PER_PAGE
+            );
+
+            if (showHistoryModal) {
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                            <div className="sticky top-0 bg-white border-b p-6">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-2xl font-bold">📚 Povijest Rasporeda</h2>
+                                    <button 
+                                        onClick={() => {
+                                            setShowHistoryModal(false);
+                                            setHistoryPage(0);
+                                        }}
+                                        className="text-gray-500 hover:text-gray-700 text-2xl"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="p-6">
+                                <div className="space-y-2">
+                                    {paginatedWeeks.map((weekStart) => {
+                                        const weekKey = getWeekKey(weekStart);
+                                        const isCurrent = weekKey === getWeekKey(currentWeekStart);
+                                        const weekData = weekHistory[weekKey] || {};
+                                        const hasData = Object.keys(weekData.selections || {}).length > 0;
+                                        
+                                        return (
+                                            <button
+                                                key={weekKey}
+                                                onClick={() => {
+                                                    handleWeekChange(weekStart);
+                                                    setShowHistoryModal(false);
+                                                    setHistoryPage(0);
+                                                }}
+                                                className={`w-full text-left p-4 rounded border-2 transition-all ${
+                                                    getWeekKey(selectedWeekStart) === weekKey
+                                                        ? 'border-blue-500 bg-blue-50'
+                                                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <div>
+                                                        <div className="font-semibold">
+                                                            {formatWeekRange(weekStart)}
+                                                            {isCurrent && <span className="ml-2 text-green-600">(Trenutni)</span>}
+                                                        </div>
+                                                        {weekData.lastGenerated && (
+                                                            <div className="text-sm text-gray-600">
+                                                                Generirano: {new Date(weekData.lastGenerated).toLocaleDateString('hr-HR')}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {hasData ? (
+                                                        <span className="text-green-600">✓</span>
+                                                    ) : (
+                                                        <span className="text-gray-300">○</span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {totalPages > 1 && (
+                                    <div className="flex justify-between items-center mt-6 pt-4 border-t">
+                                        <button
+                                            onClick={() => setHistoryPage(Math.max(0, historyPage - 1))}
+                                            disabled={historyPage === 0}
+                                            className={`px-4 py-2 rounded ${
+                                                historyPage === 0
+                                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                                            }`}
+                                        >
+                                            ← Prethodni
+                                        </button>
+                                        <span className="text-sm text-gray-600">
+                                            Stranica {historyPage + 1} od {totalPages}
+                                        </span>
+                                        <button
+                                            onClick={() => setHistoryPage(Math.min(totalPages - 1, historyPage + 1))}
+                                            disabled={historyPage === totalPages - 1}
+                                            className={`px-4 py-2 rounded ${
+                                                historyPage === totalPages - 1
+                                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                                            }`}
+                                        >
+                                            Sljedeći →
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
             if (showResults) {
                 return (
                     <div className="max-w-6xl mx-auto p-4 sm:p-6">
-                        {/* Week Selector Header */}
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                                <div>
-                                    <h1 className="text-2xl font-bold mb-2">📋 Predloženi Raspored Prijevoza</h1>
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-sm font-medium text-gray-700">📅 Tjedan:</label>
-                                        <select 
-                                            value={getWeekKey(selectedWeekStart)}
-                                            onChange={(e) => handleWeekChange(new Date(e.target.value))}
-                                            className="border border-gray-300 rounded px-3 py-1 text-sm"
-                                        >
-                                            {getAllWeeks().map(weekStart => {
-                                                const weekKey = getWeekKey(weekStart);
-                                                const isCurrent = weekKey === getWeekKey(currentWeekStart);
-                                                return (
-                                                    <option key={weekKey} value={weekKey}>
-                                                        {formatWeekRange(weekStart)} {isCurrent ? '(Trenutni)' : ''}
-                                                    </option>
-                                                );
-                                            })}
-                                        </select>
-                                    </div>
+                            <div className="flex flex-col gap-4">
+                                <div className="flex justify-between items-start">
+                                    <h1 className="text-2xl font-bold">📋 Predloženi Raspored Prijevoza</h1>
+                                    {!firebaseConnected && (
+                                        <div className="text-xs text-orange-600 bg-orange-50 px-3 py-1 rounded">
+                                            ⚠️ Lokalni režim
+                                        </div>
+                                    )}
                                 </div>
-                                {isReadOnly && (
-                                    <div className="bg-gray-100 border border-gray-300 rounded px-4 py-2 text-sm">
-                                        <span className="text-gray-700">🔒 Pregled prošlog tjedna (samo čitanje)</span>
+                                
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-sm font-medium text-gray-700">📅 Odaberi datum:</label>
+                                        <input
+                                            type="date"
+                                            value={selectedDate}
+                                            onChange={(e) => setSelectedDate(e.target.value)}
+                                            className="border border-gray-300 rounded px-3 py-1 text-sm"
+                                        />
+                                        <button
+                                            onClick={handleDateSelect}
+                                            className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                                        >
+                                            Idi
+                                        </button>
                                     </div>
-                                )}
+                                    <button
+                                        onClick={() => setShowHistoryModal(true)}
+                                        className="bg-purple-500 text-white px-4 py-1 rounded text-sm hover:bg-purple-600"
+                                    >
+                                        📚 Povijest
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                    <div className="text-lg font-semibold text-blue-600">
+                                        Tjedan: {formatWeekRange(selectedWeekStart)}
+                                        {isCurrentWeek && <span className="text-green-600 ml-2">(Trenutni)</span>}
+                                    </div>
+                                    {isReadOnly && (
+                                        <div className="bg-gray-100 border border-gray-300 rounded px-4 py-2 text-sm">
+                                            <span className="text-gray-700">🔒 Samo čitanje</span>
+                                        </div>
+                                    )}
+                                </div>
+
                                 {lastGenerated && (
                                     <p className="text-sm text-green-600">
                                         Generirano: {new Date(lastGenerated).toLocaleString('hr-HR')}
@@ -436,43 +624,61 @@
 
             return (
                 <div className="max-w-6xl mx-auto p-4 sm:p-6">
-                    {/* Week Selector Header */}
                     <div className="bg-white rounded-lg shadow p-6 mb-6">
                         <div className="flex flex-col gap-4">
-                            <div>
-                                <h1 className="text-2xl font-bold mb-2">🏀 Tjedni Raspored Treninga</h1>
-                                <p className="text-gray-600">Označite kada dijete dolazi i kada možete voziti</p>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h1 className="text-2xl font-bold mb-2">🏀 Tjedni Raspored Treninga</h1>
+                                    <p className="text-gray-600">Označite kada dijete dolazi i kada možete voziti</p>
+                                </div>
+                                {!firebaseConnected && (
+                                    <div className="text-xs text-orange-600 bg-orange-50 px-3 py-2 rounded">
+                                        ⚠️ Lokalni režim - podaci nisu podijeljeni
+                                    </div>
+                                )}
                             </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            
+                            <div className="flex flex-col sm:flex-row gap-3">
                                 <div className="flex items-center gap-2">
-                                    <label className="text-sm font-medium text-gray-700">📅 Tjedan:</label>
-                                    <select 
-                                        value={getWeekKey(selectedWeekStart)}
-                                        onChange={(e) => handleWeekChange(new Date(e.target.value))}
+                                    <label className="text-sm font-medium text-gray-700">📅 Odaberi datum:</label>
+                                    <input
+                                        type="date"
+                                        value={selectedDate}
+                                        onChange={(e) => setSelectedDate(e.target.value)}
                                         className="border border-gray-300 rounded px-3 py-2"
+                                    />
+                                    <button
+                                        onClick={handleDateSelect}
+                                        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                                     >
-                                        {getAllWeeks().map(weekStart => {
-                                            const weekKey = getWeekKey(weekStart);
-                                            const isCurrent = weekKey === getWeekKey(currentWeekStart);
-                                            return (
-                                                <option key={weekKey} value={weekKey}>
-                                                    {formatWeekRange(weekStart)} {isCurrent ? '(Trenutni)' : ''}
-                                                </option>
-                                            );
-                                        })}
-                                    </select>
+                                        Idi
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setShowHistoryModal(true)}
+                                    className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600"
+                                >
+                                    📚 Povijest Rasporeda
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="text-lg font-semibold text-blue-600">
+                                    Tjedan: {formatWeekRange(selectedWeekStart)}
+                                    {isCurrentWeek && <span className="text-green-600 ml-2">(Trenutni)</span>}
                                 </div>
                                 {isReadOnly && (
                                     <div className="bg-gray-100 border border-gray-300 rounded px-4 py-2 text-sm">
-                                        <span className="text-gray-700">🔒 Pregled prošlog tjedna (samo čitanje)</span>
+                                        <span className="text-gray-700">🔒 Samo čitanje</span>
                                     </div>
                                 )}
-                                {lastGenerated && (
-                                    <p className="text-sm text-green-600">
-                                        Zadnji raspored: {new Date(lastGenerated).toLocaleString('hr-HR')}
-                                    </p>
-                                )}
                             </div>
+
+                            {lastGenerated && (
+                                <p className="text-sm text-green-600">
+                                    Zadnji raspored: {new Date(lastGenerated).toLocaleString('hr-HR')}
+                                </p>
+                            )}
                         </div>
                     </div>
 
