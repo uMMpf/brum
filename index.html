@@ -27,7 +27,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState } = React;
+        const { useState, useEffect } = React;
 
         const CarpoolApp = () => {
             const practices = [
@@ -41,21 +41,122 @@
             const children = ['Bartol', 'Ivano', 'Mak'];
             const families = ['Vlahović', 'Šipek', 'Marić'];
 
-            const [selections, setSelections] = useState({});
-            const [assignments, setAssignments] = useState({});
+            // Get Monday of a given week
+            const getMondayOfWeek = (date) => {
+                const d = new Date(date);
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                return new Date(d.setDate(diff));
+            };
+
+            // Get current active week based on Saturday 15:00 rule
+            const getCurrentWeekStart = () => {
+                const now = new Date();
+                const day = now.getDay();
+                const hour = now.getHours();
+                
+                // If Saturday after 15:00, advance to next week
+                if (day === 6 && hour >= 15) {
+                    const nextWeek = new Date(now);
+                    nextWeek.setDate(now.getDate() + 2); // Move to Monday
+                    return getMondayOfWeek(nextWeek);
+                }
+                
+                return getMondayOfWeek(now);
+            };
+
+            // Format week range
+            const formatWeekRange = (mondayDate) => {
+                const monday = new Date(mondayDate);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+                
+                const formatDate = (d) => {
+                    return d.toLocaleDateString('hr-HR', { day: 'numeric', month: 'short', year: 'numeric' });
+                };
+                
+                return `${formatDate(monday)} - ${formatDate(sunday)}`;
+            };
+
+            const getWeekKey = (mondayDate) => {
+                return mondayDate.toISOString().split('T')[0];
+            };
+
+            // Initialize state
+            const [currentWeekStart, setCurrentWeekStart] = useState(getCurrentWeekStart());
+            const [selectedWeekStart, setSelectedWeekStart] = useState(getCurrentWeekStart());
+            const [weekHistory, setWeekHistory] = useState({});
             const [showResults, setShowResults] = useState(false);
-            const [lastGenerated, setLastGenerated] = useState(null);
+
+            // Check and auto-archive on load
+            useEffect(() => {
+                const checkAndArchive = () => {
+                    const newCurrentWeek = getCurrentWeekStart();
+                    const newCurrentKey = getWeekKey(newCurrentWeek);
+                    const oldCurrentKey = getWeekKey(currentWeekStart);
+                    
+                    if (newCurrentKey !== oldCurrentKey) {
+                        setCurrentWeekStart(newCurrentWeek);
+                        setSelectedWeekStart(newCurrentWeek);
+                    }
+                };
+                
+                checkAndArchive();
+            }, []);
+
+            // Get current week data
+            const getCurrentWeekData = () => {
+                const weekKey = getWeekKey(selectedWeekStart);
+                return weekHistory[weekKey] || { selections: {}, assignments: {}, lastGenerated: null };
+            };
+
+            const weekData = getCurrentWeekData();
+            const selections = weekData.selections;
+            const assignments = weekData.assignments;
+            const lastGenerated = weekData.lastGenerated;
+
+            // Check if viewing current (editable) week
+            const isCurrentWeek = getWeekKey(selectedWeekStart) === getWeekKey(currentWeekStart);
+            const isReadOnly = !isCurrentWeek;
 
             const isDateInPast = (practiceId) => {
+                // Only disable if viewing a past week
+                if (!isCurrentWeek) return true;
+                
                 const dayMap = { 'pon': 1, 'uto': 2, 'cet': 4, 'pet': 5, 'sub': 6 };
-                const today = new Date().getDay();
+                const now = new Date();
+                const today = now.getDay();
+                const hour = now.getHours();
+                
+                // Sunday: nothing is past
                 if (today === 0) return false;
-                return dayMap[practiceId] <= today;
+                
+                // Saturday after 15:00: preparing next week, current week is locked
+                if (today === 6 && hour >= 15) return true;
+                
+                // Saturday before 15:00: Saturday practice not past yet
+                if (today === 6 && practiceId === 'sub') return false;
+                
+                return dayMap[practiceId] < today || (dayMap[practiceId] === today && practiceId !== 'sub');
+            };
+
+            const updateWeekData = (newSelections, newAssignments, newLastGenerated) => {
+                const weekKey = getWeekKey(selectedWeekStart);
+                setWeekHistory(prev => ({
+                    ...prev,
+                    [weekKey]: {
+                        selections: newSelections || selections,
+                        assignments: newAssignments || assignments,
+                        lastGenerated: newLastGenerated !== undefined ? newLastGenerated : lastGenerated
+                    }
+                }));
             };
 
             const toggleSelection = (item, day, type) => {
+                if (isReadOnly) return;
                 const key = `${item}-${day}-${type}`;
-                setSelections(prev => ({ ...prev, [key]: !prev[key] }));
+                const newSelections = { ...selections, [key]: !selections[key] };
+                updateWeekData(newSelections, assignments, lastGenerated);
             };
 
             const isSelected = (item, day, type) => {
@@ -77,6 +178,8 @@
             };
 
             const generateAssignments = () => {
+                if (isReadOnly) return;
+                
                 const newAssignments = { ...assignments };
                 const counts = {};
                 
@@ -108,28 +211,76 @@
                     }
                 });
 
-                setAssignments(newAssignments);
-                setLastGenerated(new Date());
+                const now = new Date();
+                updateWeekData(selections, newAssignments, now);
                 setShowResults(true);
             };
 
-            const reset = () => {
-                setSelections({});
-                setAssignments({});
+            const resetCurrentWeek = () => {
+                if (isReadOnly) return;
+                const weekKey = getWeekKey(selectedWeekStart);
+                setWeekHistory(prev => {
+                    const newHistory = { ...prev };
+                    delete newHistory[weekKey];
+                    return newHistory;
+                });
                 setShowResults(false);
-                setLastGenerated(null);
+            };
+
+            // Get all weeks (current + history), sorted newest first
+            const getAllWeeks = () => {
+                const weeks = new Set();
+                weeks.add(getWeekKey(currentWeekStart));
+                Object.keys(weekHistory).forEach(key => weeks.add(key));
+                
+                return Array.from(weeks)
+                    .map(key => new Date(key))
+                    .sort((a, b) => b - a);
+            };
+
+            const handleWeekChange = (weekStart) => {
+                setSelectedWeekStart(weekStart);
+                setShowResults(false);
             };
 
             if (showResults) {
                 return (
                     <div className="max-w-6xl mx-auto p-4 sm:p-6">
+                        {/* Week Selector Header */}
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
-                            <h1 className="text-2xl font-bold mb-4">📋 Predloženi Raspored Prijevoza</h1>
-                            {lastGenerated && (
-                                <p className="text-sm text-green-600">
-                                    📅 Generirano: {lastGenerated.toLocaleString('hr-HR')}
-                                </p>
-                            )}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                <div>
+                                    <h1 className="text-2xl font-bold mb-2">📋 Predloženi Raspored Prijevoza</h1>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-sm font-medium text-gray-700">📅 Tjedan:</label>
+                                        <select 
+                                            value={getWeekKey(selectedWeekStart)}
+                                            onChange={(e) => handleWeekChange(new Date(e.target.value))}
+                                            className="border border-gray-300 rounded px-3 py-1 text-sm"
+                                        >
+                                            {getAllWeeks().map(weekStart => {
+                                                const weekKey = getWeekKey(weekStart);
+                                                const isCurrent = weekKey === getWeekKey(currentWeekStart);
+                                                return (
+                                                    <option key={weekKey} value={weekKey}>
+                                                        {formatWeekRange(weekStart)} {isCurrent ? '(Trenutni)' : ''}
+                                                    </option>
+                                                );
+                                            })}
+                                        </select>
+                                    </div>
+                                </div>
+                                {isReadOnly && (
+                                    <div className="bg-gray-100 border border-gray-300 rounded px-4 py-2 text-sm">
+                                        <span className="text-gray-700">🔒 Pregled prošlog tjedna (samo čitanje)</span>
+                                    </div>
+                                )}
+                                {lastGenerated && (
+                                    <p className="text-sm text-green-600">
+                                        Generirano: {new Date(lastGenerated).toLocaleString('hr-HR')}
+                                    </p>
+                                )}
+                            </div>
                         </div>
 
                         {/* Djeca koja dolaze */}
@@ -273,9 +424,11 @@
                             <button onClick={() => setShowResults(false)} className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600">
                                 Nazad
                             </button>
-                            <button onClick={reset} className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600">
-                                🗑️ Reset
-                            </button>
+                            {!isReadOnly && (
+                                <button onClick={resetCurrentWeek} className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600">
+                                    🗑️ Reset Ovaj Tjedan
+                                </button>
+                            )}
                         </div>
                     </div>
                 );
@@ -283,14 +436,44 @@
 
             return (
                 <div className="max-w-6xl mx-auto p-4 sm:p-6">
+                    {/* Week Selector Header */}
                     <div className="bg-white rounded-lg shadow p-6 mb-6">
-                        <h1 className="text-2xl font-bold mb-2">🏀 Tjedni Raspored Treninga</h1>
-                        <p className="text-gray-600">Označite kada dijete dolazi i kada možete voziti</p>
-                        {lastGenerated && (
-                            <p className="text-sm text-green-600 mt-2">
-                                📅 Zadnji raspored: {lastGenerated.toLocaleString('hr-HR')}
-                            </p>
-                        )}
+                        <div className="flex flex-col gap-4">
+                            <div>
+                                <h1 className="text-2xl font-bold mb-2">🏀 Tjedni Raspored Treninga</h1>
+                                <p className="text-gray-600">Označite kada dijete dolazi i kada možete voziti</p>
+                            </div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm font-medium text-gray-700">📅 Tjedan:</label>
+                                    <select 
+                                        value={getWeekKey(selectedWeekStart)}
+                                        onChange={(e) => handleWeekChange(new Date(e.target.value))}
+                                        className="border border-gray-300 rounded px-3 py-2"
+                                    >
+                                        {getAllWeeks().map(weekStart => {
+                                            const weekKey = getWeekKey(weekStart);
+                                            const isCurrent = weekKey === getWeekKey(currentWeekStart);
+                                            return (
+                                                <option key={weekKey} value={weekKey}>
+                                                    {formatWeekRange(weekStart)} {isCurrent ? '(Trenutni)' : ''}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                </div>
+                                {isReadOnly && (
+                                    <div className="bg-gray-100 border border-gray-300 rounded px-4 py-2 text-sm">
+                                        <span className="text-gray-700">🔒 Pregled prošlog tjedna (samo čitanje)</span>
+                                    </div>
+                                )}
+                                {lastGenerated && (
+                                    <p className="text-sm text-green-600">
+                                        Zadnji raspored: {new Date(lastGenerated).toLocaleString('hr-HR')}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     {/* Tablica 1: Djeca */}
@@ -318,6 +501,7 @@
                                             <td className="border p-2 font-bold">{child}</td>
                                             {practices.map(p => {
                                                 const isPast = isDateInPast(p.id);
+                                                const isDisabled = isPast || isReadOnly;
                                                 return (
                                                     <td key={p.id} className="border p-2 text-center">
                                                         <input
@@ -325,10 +509,10 @@
                                                             checked={isSelected(child, p.id, 'child')}
                                                             onChange={(e) => {
                                                                 e.stopPropagation();
-                                                                if (!isPast) toggleSelection(child, p.id, 'child');
+                                                                if (!isDisabled) toggleSelection(child, p.id, 'child');
                                                             }}
-                                                            disabled={isPast}
-                                                            className={`w-5 h-5 ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                                            disabled={isDisabled}
+                                                            className={`w-5 h-5 ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                                         />
                                                     </td>
                                                 );
@@ -365,33 +549,34 @@
                                             <td className="border p-2 font-bold">{family}</td>
                                             {practices.map(p => {
                                                 const isPast = isDateInPast(p.id);
+                                                const isDisabled = isPast || isReadOnly;
                                                 return (
                                                     <td key={p.id} className="border p-2">
                                                         <div className="flex gap-3 justify-center">
-                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-green-50'}`}>
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-green-50'}`}>
                                                                 <span className="text-xs mb-1">tamo</span>
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isSelected(family, p.id, 'tamo')}
                                                                     onChange={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (!isPast) toggleSelection(family, p.id, 'tamo');
+                                                                        if (!isDisabled) toggleSelection(family, p.id, 'tamo');
                                                                     }}
-                                                                    disabled={isPast}
-                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                                    disabled={isDisabled}
+                                                                    className={`w-5 h-5 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                                                 />
                                                             </label>
-                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-orange-50'}`}>
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-orange-50'}`}>
                                                                 <span className="text-xs mb-1">nazad</span>
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isSelected(family, p.id, 'nazad')}
                                                                     onChange={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (!isPast) toggleSelection(family, p.id, 'nazad');
+                                                                        if (!isDisabled) toggleSelection(family, p.id, 'nazad');
                                                                     }}
-                                                                    disabled={isPast}
-                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                                    disabled={isDisabled}
+                                                                    className={`w-5 h-5 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                                                 />
                                                             </label>
                                                         </div>
@@ -408,7 +593,12 @@
                     <div className="text-center">
                         <button 
                             onClick={generateAssignments}
-                            className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700 text-lg"
+                            disabled={isReadOnly}
+                            className={`px-8 py-3 rounded-lg font-bold text-lg ${
+                                isReadOnly 
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
                         >
                             🔄 Generiraj Raspored Prijevoza
                         </button>
