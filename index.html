@@ -56,7 +56,6 @@
                 { id: 'sub', day: 'Sub', time: '13:00-14:30' }
             ];
 
-            // Use internal IDs for storage
             const childrenIds = Object.keys(NAME_MAP.children);
             const familyIds = Object.keys(NAME_MAP.families);
 
@@ -98,22 +97,11 @@
             };
 
             const [currentWeekStart] = useState(getCurrentWeekStart());
-            const [viewingWeek, setViewingWeek] = useState('current');
             const [weekHistory, setWeekHistory] = useState({});
             const [showResults, setShowResults] = useState(false);
             const [isLoading, setIsLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
             const [connectionStatus, setConnectionStatus] = useState('checking');
-
-            const getNextWeekStart = () => {
-                const nextWeek = new Date(currentWeekStart);
-                nextWeek.setDate(nextWeek.getDate() + 7);
-                return nextWeek;
-            };
-
-            const getActiveWeekStart = () => {
-                return viewingWeek === 'current' ? currentWeekStart : getNextWeekStart();
-            };
 
             const loadFromSheets = async () => {
                 if (SCRIPT_URL === 'YOUR_SCRIPT_URL_HERE') {
@@ -142,7 +130,7 @@
 
                 try {
                     setIsSaving(true);
-                    const response = await fetch(SCRIPT_URL, {
+                    await fetch(SCRIPT_URL, {
                         method: 'POST',
                         mode: 'no-cors',
                         headers: {
@@ -207,7 +195,7 @@
             };
 
             const getCurrentWeekData = () => {
-                const weekKey = getWeekKey(getActiveWeekStart());
+                const weekKey = getWeekKey(currentWeekStart);
                 return weekHistory[weekKey] || { selections: {}, assignments: {}, lastGenerated: null };
             };
 
@@ -216,11 +204,7 @@
             const assignments = weekData.assignments;
             const lastGenerated = weekData.lastGenerated;
 
-            const isCurrentWeek = viewingWeek === 'current';
-
             const isDateInPast = (practiceId) => {
-                if (viewingWeek === 'next') return false;
-                
                 const dayMap = { 'pon': 1, 'uto': 2, 'cet': 4, 'pet': 5, 'sub': 6 };
                 const now = new Date();
                 const today = now.getDay();
@@ -234,7 +218,7 @@
             };
 
             const updateWeekData = (newSelections, newAssignments, newLastGenerated) => {
-                const weekKey = getWeekKey(getActiveWeekStart());
+                const weekKey = getWeekKey(currentWeekStart);
                 const newHistory = {
                     ...weekHistory,
                     [weekKey]: {
@@ -270,12 +254,24 @@
                 return 'bg-orange-100 text-orange-800';
             };
 
+            // Check if all families have entered their data
+            const allFamiliesEntered = () => {
+                // Check if each family has at least one selection
+                return familyIds.every(familyId => {
+                    return practices.some(practice => {
+                        if (isDateInPast(practice.id)) return false;
+                        return isSelected(familyId, practice.id, 'tamo') || 
+                               isSelected(familyId, practice.id, 'nazad');
+                    });
+                });
+            };
+
             const generateAssignments = () => {
-                const newAssignments = { ...assignments };
+                const newAssignments = {};
                 const counts = {};
                 
                 familyIds.forEach(f => {
-                    counts[f] = Object.values(assignments).filter(d => d === f).length;
+                    counts[f] = 0;
                 });
 
                 practices.forEach(practice => {
@@ -307,8 +303,15 @@
                 setShowResults(true);
             };
 
+            // Auto-generate when all data is entered
+            useEffect(() => {
+                if (allFamiliesEntered() && !showResults && Object.keys(selections).length > 0) {
+                    generateAssignments();
+                }
+            }, [selections]);
+
             const resetCurrentWeek = () => {
-                const weekKey = getWeekKey(getActiveWeekStart());
+                const weekKey = getWeekKey(currentWeekStart);
                 const newHistory = { ...weekHistory };
                 delete newHistory[weekKey];
                 saveData(newHistory);
@@ -344,7 +347,7 @@
                 }
                 return (
                     <div className="text-xs bg-orange-50 text-orange-600 px-3 py-1 rounded">
-                        ⚠️ Lokalni režim
+                        ⚠️ Lokalni režim - provjerite SCRIPT_URL
                     </div>
                 );
             };
@@ -357,32 +360,8 @@
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <h1 className="text-2xl font-bold">📋 Predloženi Raspored Prijevoza</h1>
-                                        
-                                        <div className="flex gap-2 mt-3">
-                                            <button
-                                                onClick={() => setViewingWeek('current')}
-                                                className={`px-4 py-2 rounded font-semibold transition-all ${
-                                                    viewingWeek === 'current'
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                                }`}
-                                            >
-                                                Ovaj tjedan
-                                            </button>
-                                            <button
-                                                onClick={() => setViewingWeek('next')}
-                                                className={`px-4 py-2 rounded font-semibold transition-all ${
-                                                    viewingWeek === 'next'
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                                }`}
-                                            >
-                                                Sljedeći tjedan
-                                            </button>
-                                        </div>
-                                        
                                         <div className="text-lg font-semibold text-blue-600 mt-2">
-                                            {formatWeekRange(getActiveWeekStart())}
+                                            Tjedan: {formatWeekRange(currentWeekStart)}
                                         </div>
                                     </div>
                                     <StatusBadge />
@@ -531,11 +510,11 @@
                         </div>
 
                         <div className="flex gap-4 justify-center flex-wrap">
-                            <button onClick={() => setShowResults(false)} className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600">
-                                Nazad
+                            <button onClick={() => setShowResults(false)} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                                ✏️ Uredi Dostupnost
                             </button>
                             <button onClick={resetCurrentWeek} className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600">
-                                🗑️ Reset {viewingWeek === 'current' ? 'Ovaj' : 'Sljedeći'} Tjedan
+                                🗑️ Reset Tjedan
                             </button>
                         </div>
                     </div>
@@ -550,32 +529,8 @@
                                 <div>
                                     <h1 className="text-2xl font-bold mb-2">🏀 Tjedni Raspored Treninga</h1>
                                     <p className="text-gray-600">Označite kada dijete dolazi i kada možete voziti</p>
-                                    
-                                    <div className="flex gap-2 mt-3">
-                                        <button
-                                            onClick={() => setViewingWeek('current')}
-                                            className={`px-4 py-2 rounded font-semibold transition-all ${
-                                                viewingWeek === 'current'
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                            }`}
-                                        >
-                                            Ovaj tjedan
-                                        </button>
-                                        <button
-                                            onClick={() => setViewingWeek('next')}
-                                            className={`px-4 py-2 rounded font-semibold transition-all ${
-                                                viewingWeek === 'next'
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                            }`}
-                                        >
-                                            Sljedeći tjedan
-                                        </button>
-                                    </div>
-                                    
                                     <div className="text-lg font-semibold text-blue-600 mt-2">
-                                        {formatWeekRange(getActiveWeekStart())}
+                                        Tjedan: {formatWeekRange(currentWeekStart)}
                                     </div>
                                 </div>
                                 <StatusBadge />
@@ -699,14 +654,13 @@
                         </div>
                     </div>
 
-                    <div className="text-center">
-                        <button 
-                            onClick={generateAssignments}
-                            className="px-8 py-3 rounded-lg font-bold text-lg bg-blue-600 text-white hover:bg-blue-700"
-                        >
-                            🔄 Generiraj Raspored Prijevoza
-                        </button>
-                    </div>
+                    {allFamiliesEntered() && (
+                        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 text-center">
+                            <p className="text-blue-800 font-semibold">
+                                ✓ Sve obitelji su unijele podatke! Raspored se automatski generira...
+                            </p>
+                        </div>
+                    )}
                 </div>
             );
         };
