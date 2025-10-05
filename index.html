@@ -30,7 +30,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // PASTE YOUR GOOGLE APPS SCRIPT URL HERE (see setup instructions below)
+        // PASTE YOUR GOOGLE APPS SCRIPT URL HERE
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz8LHqmrDFy1Up-MKwFE2uc4EamQbf8BTNXtlzTMmBmMCrzqzON5-BKN5TkuwYslsnV/exec';
 
         const CarpoolApp = () => {
@@ -82,18 +82,24 @@
                 return mondayDate.toISOString().split('T')[0];
             };
 
-            const [currentWeekStart, setCurrentWeekStart] = useState(getCurrentWeekStart());
-            const [selectedWeekStart, setSelectedWeekStart] = useState(getCurrentWeekStart());
+            const [currentWeekStart] = useState(getCurrentWeekStart());
+            const [viewingWeek, setViewingWeek] = useState('current');
             const [weekHistory, setWeekHistory] = useState({});
             const [showResults, setShowResults] = useState(false);
-            const [showHistoryModal, setShowHistoryModal] = useState(false);
-            const [historyPage, setHistoryPage] = useState(0);
-            const [selectedDate, setSelectedDate] = useState('');
             const [isLoading, setIsLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
             const [connectionStatus, setConnectionStatus] = useState('checking');
 
-            // Load data from Google Sheets
+            const getNextWeekStart = () => {
+                const nextWeek = new Date(currentWeekStart);
+                nextWeek.setDate(nextWeek.getDate() + 7);
+                return nextWeek;
+            };
+
+            const getActiveWeekStart = () => {
+                return viewingWeek === 'current' ? currentWeekStart : getNextWeekStart();
+            };
+
             const loadFromSheets = async () => {
                 if (SCRIPT_URL === 'YOUR_SCRIPT_URL_HERE') {
                     console.log('Google Sheets not configured yet');
@@ -114,7 +120,6 @@
                 return false;
             };
 
-            // Save data to Google Sheets
             const saveToSheets = async (data) => {
                 if (SCRIPT_URL === 'YOUR_SCRIPT_URL_HERE') {
                     return false;
@@ -131,7 +136,6 @@
                         body: JSON.stringify(data)
                     });
                     
-                    // no-cors doesn't give us response, but if no error thrown, assume success
                     setConnectionStatus('connected');
                     return true;
                 } catch (error) {
@@ -142,7 +146,6 @@
                 }
             };
 
-            // Load data on mount
             useEffect(() => {
                 const loadData = async () => {
                     setIsLoading(true);
@@ -165,7 +168,6 @@
                 
                 loadData();
 
-                // Auto-refresh every 30 seconds to get updates from other devices
                 const interval = setInterval(() => {
                     if (connectionStatus === 'connected') {
                         loadFromSheets();
@@ -190,7 +192,7 @@
             };
 
             const getCurrentWeekData = () => {
-                const weekKey = getWeekKey(selectedWeekStart);
+                const weekKey = getWeekKey(getActiveWeekStart());
                 return weekHistory[weekKey] || { selections: {}, assignments: {}, lastGenerated: null };
             };
 
@@ -199,11 +201,10 @@
             const assignments = weekData.assignments;
             const lastGenerated = weekData.lastGenerated;
 
-            const isCurrentWeek = getWeekKey(selectedWeekStart) === getWeekKey(currentWeekStart);
-            const isReadOnly = !isCurrentWeek;
+            const isCurrentWeek = viewingWeek === 'current';
 
             const isDateInPast = (practiceId) => {
-                if (!isCurrentWeek) return true;
+                if (viewingWeek === 'next') return false;
                 
                 const dayMap = { 'pon': 1, 'uto': 2, 'cet': 4, 'pet': 5, 'sub': 6 };
                 const now = new Date();
@@ -218,7 +219,7 @@
             };
 
             const updateWeekData = (newSelections, newAssignments, newLastGenerated) => {
-                const weekKey = getWeekKey(selectedWeekStart);
+                const weekKey = getWeekKey(getActiveWeekStart());
                 const newHistory = {
                     ...weekHistory,
                     [weekKey]: {
@@ -231,7 +232,6 @@
             };
 
             const toggleSelection = (item, day, type) => {
-                if (isReadOnly) return;
                 const key = `${item}-${day}-${type}`;
                 const newSelections = { ...selections, [key]: !selections[key] };
                 updateWeekData(newSelections, assignments, lastGenerated);
@@ -256,8 +256,6 @@
             };
 
             const generateAssignments = () => {
-                if (isReadOnly) return;
-                
                 const newAssignments = { ...assignments };
                 const counts = {};
                 
@@ -295,43 +293,12 @@
             };
 
             const resetCurrentWeek = () => {
-                if (isReadOnly) return;
-                const weekKey = getWeekKey(selectedWeekStart);
+                const weekKey = getWeekKey(getActiveWeekStart());
                 const newHistory = { ...weekHistory };
                 delete newHistory[weekKey];
                 saveData(newHistory);
                 setShowResults(false);
             };
-
-            const getAllWeeks = () => {
-                const weeks = new Set();
-                weeks.add(getWeekKey(currentWeekStart));
-                Object.keys(weekHistory).forEach(key => weeks.add(key));
-                
-                return Array.from(weeks)
-                    .map(key => new Date(key))
-                    .sort((a, b) => b - a);
-            };
-
-            const handleWeekChange = (weekStart) => {
-                setSelectedWeekStart(weekStart);
-                setShowResults(false);
-            };
-
-            const handleDateSelect = () => {
-                if (!selectedDate) return;
-                const date = new Date(selectedDate);
-                const monday = getMondayOfWeek(date);
-                handleWeekChange(monday);
-            };
-
-            const ITEMS_PER_PAGE = 10;
-            const allWeeks = getAllWeeks();
-            const totalPages = Math.ceil(allWeeks.length / ITEMS_PER_PAGE);
-            const paginatedWeeks = allWeeks.slice(
-                historyPage * ITEMS_PER_PAGE,
-                (historyPage + 1) * ITEMS_PER_PAGE
-            );
 
             if (isLoading) {
                 return (
@@ -367,149 +334,43 @@
                 );
             };
 
-            if (showHistoryModal) {
-                return (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-                            <div className="sticky top-0 bg-white border-b p-6">
-                                <div className="flex justify-between items-center">
-                                    <h2 className="text-2xl font-bold">📚 Povijest Rasporeda</h2>
-                                    <button 
-                                        onClick={() => {
-                                            setShowHistoryModal(false);
-                                            setHistoryPage(0);
-                                        }}
-                                        className="text-gray-500 hover:text-gray-700 text-2xl"
-                                    >
-                                        ×
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="p-6">
-                                <div className="space-y-2">
-                                    {paginatedWeeks.map((weekStart) => {
-                                        const weekKey = getWeekKey(weekStart);
-                                        const isCurrent = weekKey === getWeekKey(currentWeekStart);
-                                        const weekData = weekHistory[weekKey] || {};
-                                        const hasData = Object.keys(weekData.selections || {}).length > 0;
-                                        
-                                        return (
-                                            <button
-                                                key={weekKey}
-                                                onClick={() => {
-                                                    handleWeekChange(weekStart);
-                                                    setShowHistoryModal(false);
-                                                    setHistoryPage(0);
-                                                }}
-                                                className={`w-full text-left p-4 rounded border-2 transition-all ${
-                                                    getWeekKey(selectedWeekStart) === weekKey
-                                                        ? 'border-blue-500 bg-blue-50'
-                                                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                                                }`}
-                                            >
-                                                <div className="flex justify-between items-center">
-                                                    <div>
-                                                        <div className="font-semibold">
-                                                            {formatWeekRange(weekStart)}
-                                                            {isCurrent && <span className="ml-2 text-green-600">(Trenutni)</span>}
-                                                        </div>
-                                                        {weekData.lastGenerated && (
-                                                            <div className="text-sm text-gray-600">
-                                                                Generirano: {new Date(weekData.lastGenerated).toLocaleDateString('hr-HR')}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {hasData ? (
-                                                        <span className="text-green-600">✓</span>
-                                                    ) : (
-                                                        <span className="text-gray-300">○</span>
-                                                    )}
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                {totalPages > 1 && (
-                                    <div className="flex justify-between items-center mt-6 pt-4 border-t">
-                                        <button
-                                            onClick={() => setHistoryPage(Math.max(0, historyPage - 1))}
-                                            disabled={historyPage === 0}
-                                            className={`px-4 py-2 rounded ${
-                                                historyPage === 0
-                                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
-                                            }`}
-                                        >
-                                            ← Prethodni
-                                        </button>
-                                        <span className="text-sm text-gray-600">
-                                            Stranica {historyPage + 1} od {totalPages}
-                                        </span>
-                                        <button
-                                            onClick={() => setHistoryPage(Math.min(totalPages - 1, historyPage + 1))}
-                                            disabled={historyPage === totalPages - 1}
-                                            className={`px-4 py-2 rounded ${
-                                                historyPage === totalPages - 1
-                                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
-                                            }`}
-                                        >
-                                            Sljedeći →
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
             if (showResults) {
                 return (
                     <div className="max-w-6xl mx-auto p-4 sm:p-6">
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
                             <div className="flex flex-col gap-4">
                                 <div className="flex justify-between items-start">
-                                    <h1 className="text-2xl font-bold">📋 Predloženi Raspored Prijevoza</h1>
-                                    <StatusBadge />
-                                </div>
-                                
-                                <div className="flex flex-col sm:flex-row gap-3">
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-sm font-medium text-gray-700">📅 Odaberi datum:</label>
-                                        <input
-                                            type="date"
-                                            value={selectedDate}
-                                            onChange={(e) => setSelectedDate(e.target.value)}
-                                            className="border border-gray-300 rounded px-3 py-1 text-sm"
-                                        />
-                                        <button
-                                            onClick={handleDateSelect}
-                                            className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
-                                        >
-                                            Idi
-                                        </button>
-                                    </div>
-                                    <button
-                                        onClick={() => setShowHistoryModal(true)}
-                                        className="bg-purple-500 text-white px-4 py-1 rounded text-sm hover:bg-purple-600"
-                                    >
-                                        📚 Povijest
-                                    </button>
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                    <div className="text-lg font-semibold text-blue-600">
-                                        Tjedan: {formatWeekRange(selectedWeekStart)}
-                                        {isCurrentWeek && <span className="text-green-600 ml-2">(Trenutni)</span>}
-                                    </div>
-                                    {isReadOnly && (
-                                        <div className="bg-gray-100 border border-gray-300 rounded px-4 py-2 text-sm">
-                                            <span className="text-gray-700">🔒 Samo čitanje</span>
+                                    <div>
+                                        <h1 className="text-2xl font-bold">📋 Predloženi Raspored Prijevoza</h1>
+                                        
+                                        <div className="flex gap-2 mt-3">
+                                            <button
+                                                onClick={() => setViewingWeek('current')}
+                                                className={`px-4 py-2 rounded font-semibold transition-all ${
+                                                    viewingWeek === 'current'
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
+                                            >
+                                                Ovaj tjedan
+                                            </button>
+                                            <button
+                                                onClick={() => setViewingWeek('next')}
+                                                className={`px-4 py-2 rounded font-semibold transition-all ${
+                                                    viewingWeek === 'next'
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
+                                            >
+                                                Sljedeći tjedan
+                                            </button>
                                         </div>
-                                    )}
+                                        
+                                        <div className="text-lg font-semibold text-blue-600 mt-2">
+                                            {formatWeekRange(getActiveWeekStart())}
+                                        </div>
+                                    </div>
+                                    <StatusBadge />
                                 </div>
 
                                 {lastGenerated && (
@@ -520,7 +381,6 @@
                             </div>
                         </div>
 
-                        {/* Tables - same as before */}
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
                             <h2 className="text-lg font-bold mb-4">👦 Djeca koja dolaze</h2>
                             <div className="overflow-x-auto px-4 sm:px-0">
@@ -659,11 +519,9 @@
                             <button onClick={() => setShowResults(false)} className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600">
                                 Nazad
                             </button>
-                            {!isReadOnly && (
-                                <button onClick={resetCurrentWeek} className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600">
-                                    🗑️ Reset Ovaj Tjedan
-                                </button>
-                            )}
+                            <button onClick={resetCurrentWeek} className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600">
+                                🗑️ Reset {viewingWeek === 'current' ? 'Ovaj' : 'Sljedeći'} Tjedan
+                            </button>
                         </div>
                     </div>
                 );
@@ -677,44 +535,35 @@
                                 <div>
                                     <h1 className="text-2xl font-bold mb-2">🏀 Tjedni Raspored Treninga</h1>
                                     <p className="text-gray-600">Označite kada dijete dolazi i kada možete voziti</p>
+                                    
+                                    <div className="flex gap-2 mt-3">
+                                        <button
+                                            onClick={() => setViewingWeek('current')}
+                                            className={`px-4 py-2 rounded font-semibold transition-all ${
+                                                viewingWeek === 'current'
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                                        >
+                                            Ovaj tjedan
+                                        </button>
+                                        <button
+                                            onClick={() => setViewingWeek('next')}
+                                            className={`px-4 py-2 rounded font-semibold transition-all ${
+                                                viewingWeek === 'next'
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                                        >
+                                            Sljedeći tjedan
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="text-lg font-semibold text-blue-600 mt-2">
+                                        {formatWeekRange(getActiveWeekStart())}
+                                    </div>
                                 </div>
                                 <StatusBadge />
-                            </div>
-                            
-                            <div className="flex flex-col sm:flex-row gap-3">
-                                <div className="flex items-center gap-2">
-                                    <label className="text-sm font-medium text-gray-700">📅 Odaberi datum:</label>
-                                    <input
-                                        type="date"
-                                        value={selectedDate}
-                                        onChange={(e) => setSelectedDate(e.target.value)}
-                                        className="border border-gray-300 rounded px-3 py-2"
-                                    />
-                                    <button
-                                        onClick={handleDateSelect}
-                                        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                                    >
-                                        Idi
-                                    </button>
-                                </div>
-                                <button
-                                    onClick={() => setShowHistoryModal(true)}
-                                    className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600"
-                                >
-                                    📚 Povijest Rasporeda
-                                </button>
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                                <div className="text-lg font-semibold text-blue-600">
-                                    Tjedan: {formatWeekRange(selectedWeekStart)}
-                                    {isCurrentWeek && <span className="text-green-600 ml-2">(Trenutni)</span>}
-                                </div>
-                                {isReadOnly && (
-                                    <div className="bg-gray-100 border border-gray-300 rounded px-4 py-2 text-sm">
-                                        <span className="text-gray-700">🔒 Samo čitanje</span>
-                                    </div>
-                                )}
                             </div>
 
                             {lastGenerated && (
@@ -749,7 +598,6 @@
                                             <td className="border p-2 font-bold">{child}</td>
                                             {practices.map(p => {
                                                 const isPast = isDateInPast(p.id);
-                                                const isDisabled = isPast || isReadOnly;
                                                 return (
                                                     <td key={p.id} className="border p-2 text-center">
                                                         <input
@@ -757,10 +605,10 @@
                                                             checked={isSelected(child, p.id, 'child')}
                                                             onChange={(e) => {
                                                                 e.stopPropagation();
-                                                                if (!isDisabled) toggleSelection(child, p.id, 'child');
+                                                                if (!isPast) toggleSelection(child, p.id, 'child');
                                                             }}
-                                                            disabled={isDisabled}
-                                                            className={`w-5 h-5 ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                                            disabled={isPast}
+                                                            className={`w-5 h-5 ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                                         />
                                                     </td>
                                                 );
@@ -796,34 +644,33 @@
                                             <td className="border p-2 font-bold">{family}</td>
                                             {practices.map(p => {
                                                 const isPast = isDateInPast(p.id);
-                                                const isDisabled = isPast || isReadOnly;
                                                 return (
                                                     <td key={p.id} className="border p-2">
                                                         <div className="flex gap-3 justify-center">
-                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-green-50'}`}>
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-green-50'}`}>
                                                                 <span className="text-xs mb-1">tamo</span>
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isSelected(family, p.id, 'tamo')}
                                                                     onChange={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (!isDisabled) toggleSelection(family, p.id, 'tamo');
+                                                                        if (!isPast) toggleSelection(family, p.id, 'tamo');
                                                                     }}
-                                                                    disabled={isDisabled}
-                                                                    className={`w-5 h-5 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                                    disabled={isPast}
+                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                                                 />
                                                             </label>
-                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-orange-50'}`}>
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-orange-50'}`}>
                                                                 <span className="text-xs mb-1">nazad</span>
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isSelected(family, p.id, 'nazad')}
                                                                     onChange={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (!isDisabled) toggleSelection(family, p.id, 'nazad');
+                                                                        if (!isPast) toggleSelection(family, p.id, 'nazad');
                                                                     }}
-                                                                    disabled={isDisabled}
-                                                                    className={`w-5 h-5 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                                    disabled={isPast}
+                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                                                 />
                                                             </label>
                                                         </div>
@@ -840,12 +687,7 @@
                     <div className="text-center">
                         <button 
                             onClick={generateAssignments}
-                            disabled={isReadOnly}
-                            className={`px-8 py-3 rounded-lg font-bold text-lg ${
-                                isReadOnly 
-                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                            }`}
+                            className="px-8 py-3 rounded-lg font-bold text-lg bg-blue-600 text-white hover:bg-blue-700"
                         >
                             🔄 Generiraj Raspored Prijevoza
                         </button>
