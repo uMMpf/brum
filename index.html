@@ -56,7 +56,8 @@
                 { id: 'sub', day: 'Sub', time: '13:00-14:30' }
             ];
 
-            const childrenIds = Object.keys(NAME_MAP.children);
+            // Use internal IDs for storage
+            const childrenIds = ['c2', 'c1', 'c3']; // Display order: Ivano, Bartol, Mak
             const familyIds = Object.keys(NAME_MAP.families);
 
             const getMondayOfWeek = (date) => {
