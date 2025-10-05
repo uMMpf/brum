@@ -333,6 +333,20 @@
                 setShowResults(true);
             };
 
+            const viewSchedule = () => {
+                // Just show existing schedule without regenerating
+                setShowResults(true);
+            };
+
+            const scheduleExists = () => {
+                return lastGenerated && Object.keys(assignments).length > 0;
+            };
+
+            const dataChangedSinceGeneration = () => {
+                if (!lastGenerated || !lastModified) return false;
+                return new Date(lastModified) > new Date(lastGenerated);
+            };
+
             const resetCurrentWeek = () => {
                 const weekKey = getWeekKey(currentWeekStart);
                 const newHistory = { ...weekHistory };
@@ -719,14 +733,45 @@
 
                     {hasEnoughData() && (
                         <div className="text-center mt-6">
-                            <button 
-                                onClick={generateAssignments}
-                                className="px-8 py-4 rounded-lg font-bold text-xl bg-green-600 text-white hover:bg-green-700 shadow-lg transform hover:scale-105 transition-all"
-                            >
-                                ✅ Gotovo - Generiraj Raspored Prijevoza
-                            </button>
+                            {scheduleExists() && !dataChangedSinceGeneration() ? (
+                                // Schedule exists and no changes - just show it
+                                <button 
+                                    onClick={viewSchedule}
+                                    className="px-8 py-4 rounded-lg font-bold text-xl bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform hover:scale-105 transition-all"
+                                >
+                                    👁️ Pregled Rasporeda Prijevoza
+                                </button>
+                            ) : (
+                                // No schedule or data changed - generate new
+                                <div className="space-y-3">
+                                    {dataChangedSinceGeneration() && (
+                                        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
+                                            <p className="text-yellow-800 font-semibold text-sm">
+                                                ⚠️ Podaci su promijenjeni nakon zadnjeg generiranja. Kliknite za novi raspored.
+                                            </p>
+                                        </div>
+                                    )}
+                                    <button 
+                                        onClick={generateAssignments}
+                                        className="px-8 py-4 rounded-lg font-bold text-xl bg-green-600 text-white hover:bg-green-700 shadow-lg transform hover:scale-105 transition-all"
+                                    >
+                                        ✅ Gotovo - Generiraj Raspored Prijevoza
+                                    </button>
+                                    {scheduleExists() && (
+                                        <button 
+                                            onClick={viewSchedule}
+                                            className="ml-4 px-6 py-4 rounded-lg font-semibold text-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-all"
+                                        >
+                                            👁️ Prikaži Stari Raspored
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                             <p className="text-sm text-gray-600 mt-2">
-                                Kliknite kada ste završili sa unosom dostupnosti
+                                {scheduleExists() && !dataChangedSinceGeneration() 
+                                    ? 'Kliknite za pregled već generiranog rasporeda'
+                                    : 'Kliknite kada ste završili sa unosom dostupnosti'
+                                }
                             </p>
                         </div>
                     )}
