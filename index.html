@@ -53,7 +53,7 @@
                 { id: 'uto', day: 'Uto', time: '18:30-20:00' },
                 { id: 'cet', day: 'Čet', time: '18:30-20:00' },
                 { id: 'pet', day: 'Pet', time: '17:00-18:30' },
-                { id: 'sub', day: 'Sub', time: '13:00-14:30' }
+                { id: 'sub', day: 'Sub', time: '12:00-13:30' }
             ];
 
             // Use internal IDs for storage
@@ -200,13 +200,14 @@
 
             const getCurrentWeekData = () => {
                 const weekKey = getWeekKey(currentWeekStart);
-                return weekHistory[weekKey] || { selections: {}, assignments: {}, lastGenerated: null };
+                return weekHistory[weekKey] || { selections: {}, assignments: {}, lastGenerated: null, lastModified: null };
             };
 
             const weekData = getCurrentWeekData();
             const selections = weekData.selections;
             const assignments = weekData.assignments;
             const lastGenerated = weekData.lastGenerated;
+            const lastModified = weekData.lastModified;
 
             const isDateInPast = (practiceId) => {
                 const now = new Date();
@@ -232,12 +233,14 @@
 
             const updateWeekData = (newSelections, newAssignments, newLastGenerated) => {
                 const weekKey = getWeekKey(currentWeekStart);
+                const now = new Date();
                 const newHistory = {
                     ...weekHistory,
                     [weekKey]: {
                         selections: newSelections || selections,
                         assignments: newAssignments || assignments,
-                        lastGenerated: newLastGenerated !== undefined ? newLastGenerated : lastGenerated
+                        lastGenerated: newLastGenerated !== undefined ? newLastGenerated : lastGenerated,
+                        lastModified: now // Always update when data changes
                     }
                 };
                 saveData(newHistory);
@@ -267,20 +270,26 @@
                 return 'bg-orange-100 text-orange-800';
             };
 
-            // Check if there's enough data to generate schedule
+            // Check if there's enough data to generate schedule (only for current week, future days)
             const hasEnoughData = () => {
+                const weekKey = getWeekKey(currentWeekStart);
+                const currentWeekData = weekHistory[weekKey] || { selections: {} };
+                const currentSelections = currentWeekData.selections;
+                
                 // Check if at least one child is attending
                 const hasChildren = practices.some(practice => {
                     if (isDateInPast(practice.id)) return false;
-                    return getAttendingChildren(practice.id).length > 0;
+                    return childrenIds.some(childId => 
+                        currentSelections[`${childId}-${practice.id}-child`]
+                    );
                 });
                 
                 // Check if at least one family has entered availability
                 const hasDrivers = familyIds.some(familyId => {
                     return practices.some(practice => {
                         if (isDateInPast(practice.id)) return false;
-                        return isSelected(familyId, practice.id, 'tamo') || 
-                               isSelected(familyId, practice.id, 'nazad');
+                        return currentSelections[`${familyId}-${practice.id}-tamo`] || 
+                               currentSelections[`${familyId}-${practice.id}-nazad`];
                     });
                 });
                 
@@ -392,10 +401,19 @@
                                     <StatusBadge />
                                 </div>
 
-                                {lastGenerated && (
-                                    <p className="text-sm text-green-600">
-                                        Generirano: {new Date(lastGenerated).toLocaleString('hr-HR')}
-                                    </p>
+                                {(lastModified || lastGenerated) && (
+                                    <div className="flex flex-col gap-1 text-sm">
+                                        {lastModified && (
+                                            <p className="text-blue-600">
+                                                📝 Zadnja promjena: {new Date(lastModified).toLocaleString('hr-HR')}
+                                            </p>
+                                        )}
+                                        {lastGenerated && (
+                                            <p className="text-green-600">
+                                                ✅ Raspored generiran: {new Date(lastGenerated).toLocaleString('hr-HR')}
+                                            </p>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -572,36 +590,20 @@
                                 <StatusBadge />
                             </div>
 
-                            {lastGenerated && (
-                                <p className="text-sm text-green-600">
-                                    Zadnji raspored: {new Date(lastGenerated).toLocaleString('hr-HR')}
-                                </p>
-                            )}
-                            
-                            <div className="flex items-center gap-2 text-sm">
-                                <span className="text-gray-600">Obitelji unijele podatke:</span>
-                                <div className="flex gap-1">
-                                    {familyIds.map(familyId => {
-                                        const hasEntered = practices.some(practice => {
-                                            if (isDateInPast(practice.id)) return false;
-                                            return isSelected(familyId, practice.id, 'tamo') || 
-                                                   isSelected(familyId, practice.id, 'nazad');
-                                        });
-                                        return (
-                                            <span 
-                                                key={familyId} 
-                                                className={`px-2 py-1 rounded text-xs ${
-                                                    hasEntered 
-                                                        ? getFamilyColor(familyId) 
-                                                        : 'bg-gray-200 text-gray-500'
-                                                }`}
-                                            >
-                                                {NAME_MAP.families[familyId]}
-                                            </span>
-                                        );
-                                    })}
+                            {(lastModified || lastGenerated) && (
+                                <div className="flex flex-col gap-1 text-sm">
+                                    {lastModified && (
+                                        <p className="text-blue-600">
+                                            📝 Zadnja promjena: {new Date(lastModified).toLocaleString('hr-HR')}
+                                        </p>
+                                    )}
+                                    {lastGenerated && (
+                                        <p className="text-green-600">
+                                            ✅ Raspored generiran: {new Date(lastGenerated).toLocaleString('hr-HR')}
+                                        </p>
+                                    )}
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
 
