@@ -33,6 +33,20 @@
         // PASTE YOUR GOOGLE APPS SCRIPT URL HERE
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz8LHqmrDFy1Up-MKwFE2uc4EamQbf8BTNXtlzTMmBmMCrzqzON5-BKN5TkuwYslsnV/exec';
 
+        // NAME MAPPING - Real names only visible here, not in Google Sheets
+        const NAME_MAP = {
+            children: {
+                'c1': 'Bartol',
+                'c2': 'Ivano',
+                'c3': 'Mak'
+            },
+            families: {
+                'f1': 'Vlahović',
+                'f2': 'Šipek',
+                'f3': 'Marić'
+            }
+        };
+
         const CarpoolApp = () => {
             const practices = [
                 { id: 'pon', day: 'Pon', time: '20:00-21:15' },
@@ -42,8 +56,9 @@
                 { id: 'sub', day: 'Sub', time: '13:00-14:30' }
             ];
 
-            const children = ['Bartol', 'Ivano', 'Mak'];
-            const families = ['Vlahović', 'Šipek', 'Marić'];
+            // Use internal IDs for storage
+            const childrenIds = Object.keys(NAME_MAP.children);
+            const familyIds = Object.keys(NAME_MAP.families);
 
             const getMondayOfWeek = (date) => {
                 const d = new Date(date);
@@ -242,16 +257,16 @@
             };
 
             const getAttendingChildren = (day) => {
-                return children.filter(child => isSelected(child, day, 'child'));
+                return childrenIds.filter(childId => isSelected(childId, day, 'child'));
             };
 
             const getAvailableDrivers = (day, direction) => {
-                return families.filter(family => isSelected(family, day, direction));
+                return familyIds.filter(familyId => isSelected(familyId, day, direction));
             };
 
-            const getFamilyColor = (family) => {
-                if (family === 'Vlahović') return 'bg-blue-100 text-blue-800';
-                if (family === 'Šipek') return 'bg-purple-100 text-purple-800';
+            const getFamilyColor = (familyId) => {
+                if (familyId === 'f1') return 'bg-blue-100 text-blue-800';
+                if (familyId === 'f2') return 'bg-purple-100 text-purple-800';
                 return 'bg-orange-100 text-orange-800';
             };
 
@@ -259,7 +274,7 @@
                 const newAssignments = { ...assignments };
                 const counts = {};
                 
-                families.forEach(f => {
+                familyIds.forEach(f => {
                     counts[f] = Object.values(assignments).filter(d => d === f).length;
                 });
 
@@ -397,12 +412,12 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {children.map(child => (
-                                            <tr key={child}>
-                                                <td className="border p-2 font-bold text-center">{child}</td>
+                                        {childrenIds.map(childId => (
+                                            <tr key={childId}>
+                                                <td className="border p-2 font-bold text-center">{NAME_MAP.children[childId]}</td>
                                                 {practices.map(p => (
                                                     <td key={p.id} className="border p-2 text-center">
-                                                        {getAttendingChildren(p.id).includes(child) ? 
+                                                        {getAttendingChildren(p.id).includes(childId) ? 
                                                             <span className="text-green-600 font-bold text-xl">✓</span> : 
                                                             <span className="text-gray-300">—</span>
                                                         }
@@ -437,7 +452,7 @@
                                                 <td key={p.id} className="border p-2 text-center">
                                                     {assignments[`${p.id}-tamo`] ? (
                                                         <span className={`px-2 py-1 rounded text-sm ${getFamilyColor(assignments[`${p.id}-tamo`])}`}>
-                                                            {assignments[`${p.id}-tamo`]}
+                                                            {NAME_MAP.families[assignments[`${p.id}-tamo`]]}
                                                         </span>
                                                     ) : <span className="text-gray-400">—</span>}
                                                 </td>
@@ -449,7 +464,7 @@
                                                 <td key={p.id} className="border p-2 text-center">
                                                     {assignments[`${p.id}-nazad`] ? (
                                                         <span className={`px-2 py-1 rounded text-sm ${getFamilyColor(assignments[`${p.id}-nazad`])}`}>
-                                                            {assignments[`${p.id}-nazad`]}
+                                                            {NAME_MAP.families[assignments[`${p.id}-nazad`]]}
                                                         </span>
                                                     ) : <span className="text-gray-400">—</span>}
                                                 </td>
@@ -481,9 +496,9 @@
                                             {practices.map(p => (
                                                 <td key={p.id} className="border p-2">
                                                     <div className="flex flex-wrap gap-1">
-                                                        {getAvailableDrivers(p.id, 'tamo').map(f => (
-                                                            <span key={f} className={`px-2 py-1 rounded text-xs ${getFamilyColor(f)}`}>
-                                                                {f}
+                                                        {getAvailableDrivers(p.id, 'tamo').map(familyId => (
+                                                            <span key={familyId} className={`px-2 py-1 rounded text-xs ${getFamilyColor(familyId)}`}>
+                                                                {NAME_MAP.families[familyId]}
                                                             </span>
                                                         ))}
                                                         {getAvailableDrivers(p.id, 'tamo').length === 0 && (
@@ -498,9 +513,9 @@
                                             {practices.map(p => (
                                                 <td key={p.id} className="border p-2">
                                                     <div className="flex flex-wrap gap-1">
-                                                        {getAvailableDrivers(p.id, 'nazad').map(f => (
-                                                            <span key={f} className={`px-2 py-1 rounded text-xs ${getFamilyColor(f)}`}>
-                                                                {f}
+                                                        {getAvailableDrivers(p.id, 'nazad').map(familyId => (
+                                                            <span key={familyId} className={`px-2 py-1 rounded text-xs ${getFamilyColor(familyId)}`}>
+                                                                {NAME_MAP.families[familyId]}
                                                             </span>
                                                         ))}
                                                         {getAvailableDrivers(p.id, 'nazad').length === 0 && (
@@ -593,19 +608,19 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {children.map(child => (
-                                        <tr key={child}>
-                                            <td className="border p-2 font-bold">{child}</td>
+                                    {childrenIds.map(childId => (
+                                        <tr key={childId}>
+                                            <td className="border p-2 font-bold">{NAME_MAP.children[childId]}</td>
                                             {practices.map(p => {
                                                 const isPast = isDateInPast(p.id);
                                                 return (
                                                     <td key={p.id} className="border p-2 text-center">
                                                         <input
                                                             type="checkbox"
-                                                            checked={isSelected(child, p.id, 'child')}
+                                                            checked={isSelected(childId, p.id, 'child')}
                                                             onChange={(e) => {
                                                                 e.stopPropagation();
-                                                                if (!isPast) toggleSelection(child, p.id, 'child');
+                                                                if (!isPast) toggleSelection(childId, p.id, 'child');
                                                             }}
                                                             disabled={isPast}
                                                             className={`w-5 h-5 ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
@@ -639,9 +654,9 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {families.map(family => (
-                                        <tr key={family}>
-                                            <td className="border p-2 font-bold">{family}</td>
+                                    {familyIds.map(familyId => (
+                                        <tr key={familyId}>
+                                            <td className="border p-2 font-bold">{NAME_MAP.families[familyId]}</td>
                                             {practices.map(p => {
                                                 const isPast = isDateInPast(p.id);
                                                 return (
@@ -651,10 +666,10 @@
                                                                 <span className="text-xs mb-1">tamo</span>
                                                                 <input
                                                                     type="checkbox"
-                                                                    checked={isSelected(family, p.id, 'tamo')}
+                                                                    checked={isSelected(familyId, p.id, 'tamo')}
                                                                     onChange={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (!isPast) toggleSelection(family, p.id, 'tamo');
+                                                                        if (!isPast) toggleSelection(familyId, p.id, 'tamo');
                                                                     }}
                                                                     disabled={isPast}
                                                                     className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
@@ -664,10 +679,10 @@
                                                                 <span className="text-xs mb-1">nazad</span>
                                                                 <input
                                                                     type="checkbox"
-                                                                    checked={isSelected(family, p.id, 'nazad')}
+                                                                    checked={isSelected(familyId, p.id, 'nazad')}
                                                                     onChange={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (!isPast) toggleSelection(family, p.id, 'nazad');
+                                                                        if (!isPast) toggleSelection(familyId, p.id, 'nazad');
                                                                     }}
                                                                     disabled={isPast}
                                                                     className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
