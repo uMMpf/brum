@@ -238,7 +238,6 @@
             const [isLoading, setIsLoading] = useState(true);
             const [showResults, setShowResults] = useState(false);
             const [askNewWeek, setAskNewWeek] = useState(false);
-            const [copied, setCopied] = useState(false);
             const [unlockPast, setUnlockPast] = useState(false);
             // idle | saving | saved | error | unauthorized
             const [saveState, setSaveState] = useState('idle');
@@ -436,12 +435,13 @@
             const driversOn = (dayId, leg) =>
                 FAMILY_IDS.filter(f => selections[`${f}-${dayId}-${leg}`] === true);
 
-            // none = nobody coming, missing = nema vozača, excess = višak, ok = one driver
+            // none = nobody coming, missing = nema vozača, ok = at least one driver.
+            // Several families on one leg is NOT a problem — it is the input the
+            // generator picks from, so it stays neutral. Red means only "nema vozača".
             const coverage = (dayId, leg) => {
                 const drivers = driversOn(dayId, leg);
                 if (attendingOn(dayId).length === 0) return { kind: 'none', drivers };
                 if (drivers.length === 0) return { kind: 'missing', drivers };
-                if (drivers.length > 1) return { kind: 'excess', drivers };
                 return { kind: 'ok', drivers };
             };
 
@@ -576,40 +576,17 @@
                 setPendingFamily(null);
             };
 
-            // Uses the generated schedule when there is one, otherwise falls back
-            // to live coverage so the button works before "Generiraj".
-            const buildWhatsAppText = () => {
-                const generated = scheduleExists();
-                const lines = [];
-                lines.push('🏀 Raspored prijevoza');
-                lines.push(`Tjedan: ${formatWeekRange(weekStart)}`);
-                lines.push('');
-                PRACTICES.forEach(p => {
-                    const attending = attendingOn(p.id);
-                    if (attending.length === 0) return;
-                    const label = (leg) => {
-                        if (generated) {
-                            const f = assignments[`${p.id}-${leg}`];
-                            return f ? NAME_MAP.families[f] : '—';
-                        }
-                        const c = coverage(p.id, leg);
-                        if (c.kind === 'missing') return 'NEMA VOZAČA';
-                        if (c.kind === 'excess') return c.drivers.map(f => NAME_MAP.families[f]).join(' + ') + ' (dogovorite se)';
-                        return NAME_MAP.families[c.drivers[0]];
-                    };
-                    lines.push(`${p.day} ${startTime(p)}`);
-                    lines.push(`  Djeca: ${attending.map(c => NAME_MAP.children[c]).join(', ')}`);
-                    lines.push(`  Odvoz: ${label('tamo')}`);
-                    lines.push(`  Povratak: ${label('nazad')}`);
-                    lines.push('');
-                });
-                return lines.join('\n').trim();
-            };
-
             // Renders the GENERATED schedule to a PNG. Every name comes from the
             // runtime NAME_MAP, so with no config it draws the placeholders.
             const drawScheduleCanvas = () => {
-                const W = 1080, PAD = 64, ROW = 192;
+                // Same four columns as the on-screen table: Dan | Djeca | Odvoz | Povratak
+                const W = 1080, PAD = 64, ROW = 104, HEAD = 182;
+                const COLS = [
+                    { x: PAD,       w: 96  },   // Dan
+                    { x: PAD + 104, w: 320 },   // Djeca
+                    { x: PAD + 432, w: 258 },   // Odvoz
+                    { x: PAD + 700, w: 252 }    // Povratak
+                ];
                 const rows = PRACTICES.map(p => ({
                     p,
                     kids: attendingOn(p.id).map(c => NAME_MAP.children[c]),
@@ -619,7 +596,7 @@
 
                 const canvas = document.createElement('canvas');
                 canvas.width = W;
-                canvas.height = PAD * 2 + 140 + rows.length * ROW;
+                canvas.height = PAD * 2 + HEAD + 24 + rows.length * ROW;
                 const g = canvas.getContext('2d');
 
                 let archivo = false;
@@ -635,43 +612,65 @@
                 g.fillText('RASPORED PRIJEVOZA', PAD, PAD);
                 g.font = `800 32px ${FF}`;
                 g.fillText(formatWeekRange(weekStart).toUpperCase(), PAD, PAD + 62);
-                g.fillRect(PAD, PAD + 112, W - PAD * 2, 4);
 
-                let y = PAD + 140;
-                const colW = (W - PAD * 2) / 2;
+                // shrink to fit the column rather than spill into the next one
+                const setFit = (text, weight, size, maxW) => {
+                    let s = size;
+                    g.font = `${weight} ${s}px ${FF}`;
+                    while (g.measureText(text).width > maxW && s > 13) {
+                        s -= 1;
+                        g.font = `${weight} ${s}px ${FF}`;
+                    }
+                };
+
+                let y = PAD + HEAD - 40;
+                g.fillStyle = '#6f6b68';
+                ['DAN', 'DJECA', 'ODVOZ', 'POVRATAK'].forEach((h, i) => {
+                    g.font = `800 20px ${FF}`;
+                    g.fillText(h, COLS[i].x, y);
+                });
+                y += 30;
+                g.fillStyle = '#201e1d';
+                g.fillRect(PAD, y, W - PAD * 2, 4);
+                y += 22;
+
                 rows.forEach(r => {
                     g.fillStyle = '#201e1d';
-                    g.font = `800 40px ${FF}`;
-                    g.fillText(r.p.day, PAD, y);
-
-                    g.font = `400 26px ${FF}`;
+                    g.font = `800 30px ${FF}`;
+                    g.fillText(r.p.day, COLS[0].x, y + 6);
+                    g.font = `400 20px ${FF}`;
                     g.fillStyle = '#6f6b68';
-                    const t = startTime(r.p);
-                    g.fillText(t, W - PAD - g.measureText(t).width, y + 10);
+                    g.fillText(startTime(r.p), COLS[0].x, y + 42);
 
-                    g.font = `400 24px ${FF}`;
-                    g.fillText(r.kids.length ? 'Djeca: ' + r.kids.join(', ') : 'Nitko ne dolazi', PAD, y + 54);
+                    if (r.kids.length) {
+                        g.fillStyle = '#201e1d';
+                        const txt = r.kids.join(', ');
+                        setFit(txt, 400, 26, COLS[1].w);
+                        g.fillText(txt, COLS[1].x, y + 12);
+                    } else {
+                        g.fillStyle = '#b9b7b4';
+                        g.font = `400 26px ${FF}`;
+                        g.fillText('nitko', COLS[1].x, y + 12);
+                    }
 
-                    [['ODVOZ', r.to, PAD], ['POVRATAK', r.from, PAD + colW]].forEach(([label, val, cx]) => {
-                        g.font = `800 20px ${FF}`;
-                        g.fillStyle = '#6f6b68';
-                        g.fillText(label, cx, y + 94);
-                        g.font = `800 32px ${FF}`;
+                    [[r.to, 2], [r.from, 3]].forEach(([val, i]) => {
                         if (val) {
                             g.fillStyle = '#201e1d';
-                            g.fillText(val, cx, y + 118);
+                            setFit(val, 800, 28, COLS[i].w);
+                            g.fillText(val, COLS[i].x, y + 10);
                         } else if (r.kids.length) {
                             g.fillStyle = '#ec3013';
-                            g.fillText('nema vozača', cx, y + 118);
+                            setFit('nema vozača', 800, 28, COLS[i].w);
+                            g.fillText('nema vozača', COLS[i].x, y + 10);
                         } else {
                             g.fillStyle = '#b9b7b4';
-                            g.fillText('—', cx, y + 118);
+                            g.font = `400 26px ${FF}`;
+                            g.fillText('—', COLS[i].x, y + 10);
                         }
                     });
 
-                    // clear of the 32 px value text above (ends ~y+156)
-                    g.fillStyle = '#b9b7b4';
-                    g.fillRect(PAD, y + ROW - 18, W - PAD * 2, 2);
+                    g.fillStyle = '#d6d4d2';
+                    g.fillRect(PAD, y + ROW - 20, W - PAD * 2, 2);
                     y += ROW;
                 });
 
@@ -704,33 +703,10 @@
                 } catch (e) {
                     if (!e || e.name !== 'AbortError') {   // AbortError = share sheet dismissed
                         console.error('Share error:', e);
-                        setPhotoNote('Slanje nije uspjelo. Probaj "Kopiraj tekst".');
+                        setPhotoNote('Slanje nije uspjelo. Pokušaj ponovno.');
                     }
                 } finally {
                     setPhotoBusy(false);
-                }
-            };
-
-            const copyForWhatsApp = async () => {
-                const text = buildWhatsAppText();
-                try {
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        await navigator.clipboard.writeText(text);
-                    } else {
-                        const ta = document.createElement('textarea');
-                        ta.value = text;
-                        ta.style.position = 'fixed';
-                        ta.style.opacity = '0';
-                        document.body.appendChild(ta);
-                        ta.focus();
-                        ta.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(ta);
-                    }
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                } catch (e) {
-                    console.error('Clipboard error:', e);
                 }
             };
 
@@ -743,7 +719,10 @@
             }
 
             const gridCols = { display: 'grid', gridTemplateColumns: '84px repeat(5, 1fr)', gap: '4px' };
-            const editCols = { display: 'grid', gridTemplateColumns: '1fr 68px 68px 68px', gap: '4px' };
+            // Spacer column separates the DIJETE group from the OBITELJ VOZI group.
+            const editCols = { display: 'grid', gridTemplateColumns: '1fr 68px 14px 68px 68px', gap: '4px' };
+            const Gap = () => <div className="justify-self-center w-px h-full bg-[#d6d4d2]"></div>;
+            const tableCols = { display: 'grid', gridTemplateColumns: '32px 1fr 1fr 1fr', gap: '6px' };
 
             const OverviewCell = ({ state }) => {
                 if (state === 'on') return <div className="h-[34px] bg-[#201e1d]"></div>;
@@ -759,33 +738,25 @@
                 if (c.kind === 'missing') {
                     return <div className="h-[34px] bg-[#ec3013] flex items-center justify-center text-white text-[15px] font-extrabold">—</div>;
                 }
-                if (c.kind === 'excess') {
-                    return (
-                        <div className="h-[34px] border-2 border-[#ec3013] flex items-center justify-center gap-1">
-                            {c.drivers.map(f => (
-                                <span key={f} className="text-[#ec3013] text-[13px] font-extrabold">{familyNumber(f)}</span>
-                            ))}
-                        </div>
-                    );
-                }
+                // One or several families: plain ink numbers, no emphasis either way.
                 return (
-                    <div className="h-[34px] flex items-center justify-center">
-                        <span className="w-6 h-6 bg-[#201e1d] text-white text-[12px] font-extrabold flex items-center justify-center">
-                            {familyNumber(c.drivers[0])}
-                        </span>
+                    <div className="h-[34px] flex items-center justify-center gap-1.5">
+                        {c.drivers.map(f => (
+                            <span key={f} className="text-[#201e1d] text-[14px] font-extrabold">{familyNumber(f)}</span>
+                        ))}
                     </div>
                 );
             };
 
+            // No red states here at all: the personal matrix is pure input, and
+            // sharing a leg with another family is normal, not an error.
             const Toggle = ({ item, dayId, type }) => {
                 const key = `${item}-${dayId}-${type}`;
                 const on = selections[key] === true;
                 const locked = isLocked(dayId);
-                const conflict = on && type !== 'child' && coverage(dayId, type).kind === 'excess';
 
                 let cls = 'border border-[#d6d4d2] bg-[#efeeec] text-[#b9b7b4]';
                 if (on) cls = 'bg-[#201e1d] text-white border border-[#201e1d]';
-                if (conflict) cls = 'border-2 border-[#ec3013] bg-[#fbdedb] text-[#ec3013]';
 
                 return (
                     <button
@@ -865,16 +836,6 @@
                 </div>
             );
 
-            const CopyButton = () => (
-                <button
-                    type="button"
-                    onClick={copyForWhatsApp}
-                    className="mt-5 h-12 w-full border-2 border-[#201e1d] text-[12px] font-extrabold tracking-[0.08em] uppercase"
-                >
-                    {copied ? '✓ Kopirano' : 'Kopiraj tekst'}
-                </button>
-            );
-
             // ---- results screen ----
             if (showResults) {
                 return (
@@ -907,50 +868,35 @@
 
                         <Rule />
 
+                        {/* one compact table: Dan | Djeca | Odvoz | Povratak */}
+                        <div style={tableCols} className="pb-2 border-b-2 border-[#201e1d]">
+                            <div className="text-[10px] font-extrabold tracking-[0.06em] uppercase text-[#6f6b68]">Dan</div>
+                            <div className="text-[10px] font-extrabold tracking-[0.06em] uppercase text-[#6f6b68]">Djeca</div>
+                            <div className="text-[10px] font-extrabold tracking-[0.06em] uppercase text-[#6f6b68]">Odvoz</div>
+                            <div className="text-[10px] font-extrabold tracking-[0.06em] uppercase text-[#6f6b68]">Povratak</div>
+                        </div>
+
                         {PRACTICES.map(p => {
                             const attending = attendingOn(p.id);
-                            const driverTo = assignments[`${p.id}-tamo`];
-                            const driverFrom = assignments[`${p.id}-nazad`];
-                            const availTo = driversOn(p.id, 'tamo');
-                            const availFrom = driversOn(p.id, 'nazad');
+                            const cell = (leg) => {
+                                const f = assignments[`${p.id}-${leg}`];
+                                if (f) return <span className="font-extrabold break-words">{NAME_MAP.families[f]}</span>;
+                                if (attending.length > 0) return <span className="font-extrabold text-[#ec3013] break-words">nema vozača</span>;
+                                return <span className="text-[#b9b7b4]">—</span>;
+                            };
                             return (
-                                <div key={p.id} className="border-b border-[#b9b7b4] pb-4 mb-4">
-                                    <div className="flex items-baseline justify-between">
-                                        <div className="text-[17px] font-extrabold">{p.day}</div>
-                                        <div className="text-[12px] text-[#6f6b68]">{startTime(p)}</div>
+                                <div key={p.id} style={tableCols} className="py-2 border-b border-[#d6d4d2] text-[12px] items-start">
+                                    <div>
+                                        <div className="font-extrabold leading-tight">{p.day}</div>
+                                        <div className="text-[10px] text-[#6f6b68]">{startTime(p)}</div>
                                     </div>
-
-                                    <div className="mt-2 text-[13px]">
-                                        <span className="text-[#6f6b68]">Djeca: </span>
+                                    <div className="break-words">
                                         {attending.length > 0
-                                            ? <span className="font-semibold break-words">{attending.map(c => NAME_MAP.children[c]).join(', ')}</span>
+                                            ? attending.map(c => NAME_MAP.children[c]).join(', ')
                                             : <span className="text-[#b9b7b4]">nitko</span>}
                                     </div>
-
-                                    <div className="mt-2 grid grid-cols-2 gap-3">
-                                        <div>
-                                            <div className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-[#6f6b68]">Odvoz</div>
-                                            {driverTo
-                                                ? <div className="text-[14px] font-extrabold break-words">{NAME_MAP.families[driverTo]}</div>
-                                                : <div className={`text-[14px] font-extrabold ${attending.length > 0 ? 'text-[#ec3013]' : 'text-[#b9b7b4]'}`}>
-                                                    {attending.length > 0 ? 'nema vozača' : '—'}
-                                                  </div>}
-                                        </div>
-                                        <div>
-                                            <div className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-[#6f6b68]">Povratak</div>
-                                            {driverFrom
-                                                ? <div className="text-[14px] font-extrabold break-words">{NAME_MAP.families[driverFrom]}</div>
-                                                : <div className={`text-[14px] font-extrabold ${attending.length > 0 ? 'text-[#ec3013]' : 'text-[#b9b7b4]'}`}>
-                                                    {attending.length > 0 ? 'nema vozača' : '—'}
-                                                  </div>}
-                                        </div>
-                                    </div>
-
-                                    {attending.length > 0 && (
-                                        <div className="mt-2 text-[10px] text-[#6f6b68] leading-snug break-words">
-                                            Mogu voziti — tamo: {availTo.length ? availTo.map(f => NAME_MAP.families[f]).join(', ') : '—'} · nazad: {availFrom.length ? availFrom.map(f => NAME_MAP.families[f]).join(', ') : '—'}
-                                        </div>
-                                    )}
+                                    <div>{cell('tamo')}</div>
+                                    <div>{cell('nazad')}</div>
                                 </div>
                             );
                         })}
@@ -966,14 +912,6 @@
                         {photoNote && (
                             <p className="mt-2 text-[11px] text-[#6f6b68] leading-snug">{photoNote}</p>
                         )}
-
-                        <button
-                            type="button"
-                            onClick={copyForWhatsApp}
-                            className="mt-3 h-12 w-full border border-[#201e1d] text-[12px] font-semibold"
-                        >
-                            {copied ? '✓ Kopirano' : 'Kopiraj tekst'}
-                        </button>
 
                         <button
                             type="button"
@@ -1032,8 +970,8 @@
 
                     <Rule />
 
-                    {/* R0 — TKO DOLAZI */}
-                    <SectionLabel>Tko dolazi</SectionLabel>
+                    {/* R0 — overview matrix */}
+                    <SectionLabel>Raspored</SectionLabel>
 
                     <div style={gridCols} className="mb-1">
                         <div></div>
@@ -1074,8 +1012,8 @@
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#201e1d] inline-block"></span>dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#e6e5e3] inline-block"></span>ne dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 border border-dashed border-[#b9b7b4] inline-block"></span>još prazno</span>
-                        <span>broj = obitelj koja vozi</span>
-                        <span className="text-[#ec3013] font-semibold">crveno = problem</span>
+                        <span>broj = obitelj koja može voziti</span>
+                        <span className="text-[#ec3013] font-semibold">crveno = nema vozača</span>
                     </div>
 
                     <Rule />
@@ -1158,9 +1096,22 @@
                         Tjedan za: {NAME_MAP.children[myChild]} / {NAME_MAP.families[myFamily]}
                     </SectionLabel>
 
+                    {/* group headers: what the child does vs what the family drives */}
+                    <div style={editCols} className="mb-1 items-end">
+                        <div></div>
+                        <div className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-[#201e1d] text-center border-b-2 border-[#201e1d] pb-1">
+                            Dijete
+                        </div>
+                        <div></div>
+                        <div style={{ gridColumn: 'span 2' }} className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-[#201e1d] text-center border-b-2 border-[#201e1d] pb-1">
+                            Obitelj vozi
+                        </div>
+                    </div>
+
                     <div style={editCols} className="mb-1">
                         <div></div>
                         <div className="text-[11px] font-extrabold tracking-[0.08em] uppercase text-[#6f6b68] text-center">Dolazi</div>
+                        <div></div>
                         <div className="text-[11px] font-extrabold tracking-[0.08em] uppercase text-[#6f6b68] text-center">Odvoz</div>
                         <div className="text-[11px] font-extrabold tracking-[0.08em] uppercase text-[#6f6b68] text-center">Povratak</div>
                     </div>
@@ -1172,14 +1123,12 @@
                                 <div className="text-[12px] text-[#6f6b68]">{startTime(p)}</div>
                             </div>
                             <Toggle item={myChild} dayId={p.id} type="child" />
+                            <Gap />
                             <Toggle item={myFamily} dayId={p.id} type="tamo" />
                             <Toggle item={myFamily} dayId={p.id} type="nazad" />
                         </div>
                     ))}
 
-                    <p className="text-[13px] text-[#6f6b68] leading-snug mt-4">
-                        Jedan tap po polju — cijeli tjedan bez otvaranja dana. Odabir obitelji se pamti.
-                    </p>
                     </div>
                     )}
 
@@ -1222,8 +1171,6 @@
                             )}
                         </div>
                     )}
-
-                    <CopyButton />
 
                     <Toast />
                 </div>
