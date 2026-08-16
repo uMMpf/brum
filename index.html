@@ -500,6 +500,17 @@
                 return new Date(lastModified) > new Date(lastGenerated);
             };
 
+            // State 1 is the default view: if the week already has a schedule that
+            // nothing has invalidated, open on it instead of the editing surface.
+            // Runs once, after the initial load — week navigation must not yank the
+            // user out of the matrix they are working in.
+            const [openedDefaultView, setOpenedDefaultView] = useState(false);
+            useEffect(() => {
+                if (isLoading || openedDefaultView) return;
+                setOpenedDefaultView(true);
+                if (scheduleExists() && !dataChangedSinceGeneration()) setShowResults(true);
+            }, [isLoading]);
+
             const resetCurrentWeek = () => {
                 const newHistory = { ...weekHistory };
                 delete newHistory[weekKey];
@@ -1132,9 +1143,14 @@
                     </div>
                     )}
 
-                    {hasFamily && hasEnoughData() && (
+                    {/* A generate button exists only when pressing it would change
+                        something. State 1 offers the way back to the schedule,
+                        state 2 offers exactly one regenerate, state 3 the first
+                        generate, state 4 nothing. */}
+                    {hasFamily && (hasEnoughData() || scheduleExists()) && (
                         <div className="mt-5">
                             {scheduleExists() && !dataChangedSinceGeneration() ? (
+                                // 1) current schedule — nothing to generate
                                 <button
                                     type="button"
                                     onClick={() => setShowResults(true)}
@@ -1142,32 +1158,40 @@
                                 >
                                     Pregled rasporeda
                                 </button>
-                            ) : (
+                            ) : scheduleExists() ? (
+                                // 2) stale — regenerate is the only generate action
                                 <div>
-                                    {dataChangedSinceGeneration() && (
-                                        <div className="border-2 border-[#ec3013] px-3 py-2 mb-3">
-                                            <p className="text-[12px] font-semibold text-[#ec3013] leading-snug">
-                                                Podaci su promijenjeni nakon generiranja. Generiraj ponovno.
-                                            </p>
-                                        </div>
+                                    <div className="border-2 border-[#ec3013] px-3 py-2 mb-3">
+                                        <p className="text-[12px] font-semibold text-[#ec3013] leading-snug">
+                                            Podaci su promijenjeni nakon generiranja.
+                                        </p>
+                                    </div>
+                                    {hasEnoughData() && (
+                                        <button
+                                            type="button"
+                                            onClick={generateAssignments}
+                                            className="h-14 w-full bg-[#ec3013] text-white text-[13px] font-extrabold tracking-[0.08em] uppercase"
+                                        >
+                                            Generiraj ponovno
+                                        </button>
                                     )}
                                     <button
                                         type="button"
-                                        onClick={generateAssignments}
-                                        className="h-14 w-full bg-[#ec3013] text-white text-[13px] font-extrabold tracking-[0.08em] uppercase"
+                                        onClick={() => setShowResults(true)}
+                                        className="mt-3 h-12 w-full border-2 border-[#201e1d] text-[12px] font-extrabold tracking-[0.08em] uppercase"
                                     >
-                                        Generiraj raspored
+                                        Prikaži stari raspored
                                     </button>
-                                    {scheduleExists() && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowResults(true)}
-                                            className="mt-3 h-12 w-full border-2 border-[#201e1d] text-[12px] font-extrabold tracking-[0.08em] uppercase"
-                                        >
-                                            Prikaži stari raspored
-                                        </button>
-                                    )}
                                 </div>
+                            ) : (
+                                // 3) no schedule yet, enough data
+                                <button
+                                    type="button"
+                                    onClick={generateAssignments}
+                                    className="h-14 w-full bg-[#ec3013] text-white text-[13px] font-extrabold tracking-[0.08em] uppercase"
+                                >
+                                    Generiraj raspored
+                                </button>
                             )}
                         </div>
                     )}
