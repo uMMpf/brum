@@ -55,6 +55,15 @@
         * { border-radius: 0 !important; }
         button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
+        /* Pebbled leather on accent-filled surfaces. Two offset dot layers,
+           ~1.5px dots ~9% darker than the accent, tiling 7px — meant to read as
+           a texture at arm's length, not as visible dots. Sits behind the label,
+           so text contrast is unchanged. */
+        .pebble {
+            background-image: radial-gradient(circle, #d72c11 0.75px, transparent 0.85px);
+            background-size: 7px 7px;
+        }
+
         /* Loading ball. Flat, no gradients. */
         @keyframes brum-bounce {
             0%, 100% { transform: translateY(0); }
@@ -258,13 +267,7 @@
             <h2 className="text-[13px] font-extrabold tracking-[0.12em] uppercase mb-3 break-words">{children}</h2>
         );
 
-        // Major section rule, with a ball resting on the line at the right end.
-        // Hairline separators inside tables stay plain.
-        const Rule = () => (
-            <div className="relative border-t-2 border-[#201e1d] my-6">
-                <Ball size={14} className="absolute right-0 text-[#201e1d]" style={{ top: '-13px' }} />
-            </div>
-        );
+        const Rule = () => <div className="border-t-2 border-[#201e1d] my-6"></div>;
 
         const CarpoolApp = () => {
             const [weekStart, setWeekStart] = useState(getCurrentWeekStart());
@@ -655,22 +658,6 @@
                 g.fillStyle = '#201e1d';
                 g.font = `800 46px ${FF}`;
                 g.fillText('RASPORED PRIJEVOZA', PAD, PAD);
-
-                // same outline ball glyph as the section rules, next to the title
-                const titleW = g.measureText('RASPORED PRIJEVOZA').width;
-                (function drawBall(cx, cy, r) {
-                    g.save();
-                    g.strokeStyle = '#201e1d';
-                    g.lineWidth = 2.5;
-                    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
-                    g.beginPath(); g.moveTo(cx, cy - r); g.lineTo(cx, cy + r); g.stroke();
-                    g.beginPath(); g.moveTo(cx - r, cy); g.lineTo(cx + r, cy); g.stroke();
-                    const k = r * 1.1;   // control point -> seam bows to about 0.55r
-                    g.beginPath(); g.moveTo(cx, cy - r); g.quadraticCurveTo(cx - k, cy, cx, cy + r); g.stroke();
-                    g.beginPath(); g.moveTo(cx, cy - r); g.quadraticCurveTo(cx + k, cy, cx, cy + r); g.stroke();
-                    g.restore();
-                })(PAD + titleW + 34, PAD + 23, 17);
-
                 g.font = `800 32px ${FF}`;
                 g.fillText(formatWeekRange(weekStart).toUpperCase(), PAD, PAD + 62);
 
@@ -800,7 +787,7 @@
                     return <div className="h-[34px] flex items-center justify-center text-[#b9b7b4] text-[13px]">·</div>;
                 }
                 if (c.kind === 'missing') {
-                    return <div className="h-[34px] bg-[#ec3013] flex items-center justify-center text-white text-[15px] font-extrabold">—</div>;
+                    return <div className="pebble h-[34px] bg-[#ec3013] flex items-center justify-center text-white text-[15px] font-extrabold">—</div>;
                 }
                 // One or several families: plain ink numbers, no emphasis either way.
                 return (
@@ -1100,7 +1087,7 @@
                                         aria-pressed={myFamily === fid}
                                         title={NAME_MAP.families[fid]}
                                         className={`h-12 px-1 text-[13px] truncate ${i > 0 ? 'border-l-2 border-[#201e1d]' : ''} ${
-                                            myFamily === fid ? 'bg-[#ec3013] text-white font-extrabold' : 'bg-white font-semibold'
+                                            myFamily === fid ? 'pebble bg-[#ec3013] text-white font-extrabold' : 'bg-white font-semibold'
                                         }`}
                                     >
                                         {NAME_MAP.families[fid]}
@@ -1227,7 +1214,7 @@
                                         <button
                                             type="button"
                                             onClick={generateAssignments}
-                                            className="h-14 w-full bg-[#ec3013] text-white text-[13px] font-extrabold tracking-[0.08em] uppercase"
+                                            className="pebble h-14 w-full bg-[#ec3013] text-white text-[13px] font-extrabold tracking-[0.08em] uppercase"
                                         >
                                             Generiraj ponovno
                                         </button>
@@ -1245,7 +1232,7 @@
                                 <button
                                     type="button"
                                     onClick={generateAssignments}
-                                    className="h-14 w-full bg-[#ec3013] text-white text-[13px] font-extrabold tracking-[0.08em] uppercase"
+                                    className="pebble h-14 w-full bg-[#ec3013] text-white text-[13px] font-extrabold tracking-[0.08em] uppercase"
                                 >
                                     Generiraj raspored
                                 </button>
