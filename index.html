@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <meta name="googlebot" content="noindex, nofollow">
+    <meta name="bingbot" content="noindex, nofollow">
+    <meta name="slurp" content="noindex, nofollow">
+    <meta name="duckduckbot" content="noindex, nofollow">
+    <meta name="baiduspider" content="noindex, nofollow">
+    <meta name="yandex" content="noindex, nofollow">
+    <meta name="anthropic-ai" content="noindex">
+    <meta name="claudebot" content="noindex">
+    <meta name="gptbot" content="noindex">
+    <meta name="chatgpt-user" content="noindex">
+    <meta name="ccbot" content="noindex">
+    <meta name="applebot" content="noindex">
+    <title>Košarka brum brum 🚗</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23FF6B35' stroke='%23000' stroke-width='2'/><path d='M 50 2 Q 50 50 50 98' stroke='%23000' stroke-width='2' fill='none'/><path d='M 2 50 Q 50 50 98 50' stroke='%23000' stroke-width='2' fill='none'/><path d='M 15 15 Q 50 50 85 85' stroke='%23000' stroke-width='2' fill='none'/><path d='M 85 15 Q 50 50 15 85' stroke='%23000' stroke-width='2' fill='none'/></svg>">
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Brum">
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Apps Script web app. Changed once, 16 Aug 2026, when the backend moved
+        // to a new deployment. See CLAUDE.md before touching this.
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz1D0boGvfu1BKD-v9qB9RKTRyA-09VvR6rkrm6T1uzU8KNdVUcN5TZzKeQm-aSezJQ/exec';
+
+        // Generic placeholder names — NO real names live in this file.
+        // Real names AND the write token arrive privately via a #cfg=<base64>
+        // link, then cached in localStorage. Storage and all logic use IDs
+        // (c1.., f1..). A config is { n: { children, families }, k: '<token>' }.
+        const DEFAULT_NAMES = {
+            children: { 'c1': 'Dijete 1', 'c2': 'Dijete 2', 'c3': 'Dijete 3' },
+            families: { 'f1': 'Obitelj 1', 'f2': 'Obitelj 2', 'f3': 'Obitelj 3' }
+        };
+
+        const CFG_KEY = 'carpoolCfg';
+        const LEGACY_KEY = 'carpoolNames';
+
+        // UTF-8-safe base64 so Croatian diacritics survive a round trip
+        const b64dec = (s) => decodeURIComponent(escape(atob(s)));
+
+        // A config is only usable if it carries both name maps.
+        const normalizeConfig = (cfg) =>
+            (cfg && cfg.n && cfg.n.children && cfg.n.families) ? cfg : null;
+
+        // Accepts a full pasted URL, a bare #cfg= / #names= fragment, or a bare
+        // base64 code. Handles both the new combined payload and the old
+        // names-only one. Returns a config object or null.
+        const parseConfig = (text) => {
+            const s = (text || '').trim();
+            if (!s) return null;
+            const mCfg = s.match(/[#&?]cfg=([^&\s]+)/);
+            const mOld = s.match(/[#&?]names=([^&\s]+)/);
+            try {
+                if (mCfg) return normalizeConfig(JSON.parse(b64dec(decodeURIComponent(mCfg[1]))));
+                if (mOld) return normalizeConfig({ n: JSON.parse(b64dec(decodeURIComponent(mOld[1]))) });
+                const parsed = JSON.parse(b64dec(decodeURIComponent(s)));
+                return normalizeConfig(parsed?.n ? parsed : { n: parsed });
+            } catch (e) {
+                return null;
+            }
+        };
+
+        function resolveConfig() {
+            // 1) #cfg= (or legacy #names=) in the URL -> cache it, strip the fragment
+            try {
+                const cfg = parseConfig(location.hash || '');
+                if (cfg) {
+                    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+                    history.replaceState(null, '', location.pathname + location.search);
+                    return cfg;
+                }
+            } catch (e) {
+                console.error('Config resolve (url) error:', e);
+            }
+            // 2) cached config, then the legacy names-only cache
+            try {
+                const s = localStorage.getItem(CFG_KEY);
+                if (s) {
+                    const cfg = normalizeConfig(JSON.parse(s));
+                    if (cfg) return cfg;
+                }
+                const legacy = localStorage.getItem(LEGACY_KEY);
+                if (legacy) {
+                    const cfg = normalizeConfig({ n: JSON.parse(legacy) });
+                    if (cfg) return cfg;
+                }
+            } catch (e) {
+                console.error('Config resolve (storage) error:', e);
+            }
+            // 3) nothing stored -> placeholders plus the paste-link box
+            return null;
+        }
+
+        const CFG = resolveConfig();
+        const HAS_CONFIG = !!CFG;
+
+        // Merged two levels deep: a link carrying only some of the names falls
+        // back to placeholders for the rest instead of wiping them.
+        const NAME_MAP = {
+            children: { ...DEFAULT_NAMES.children, ...(CFG?.n?.children || {}) },
+            families: { ...DEFAULT_NAMES.families, ...(CFG?.n?.families || {}) }
+        };
+
+        const WRITE_TOKEN = CFG?.k || null;
+
+        // On iOS a home-screen app gets its own storage container, separate from
+        // Safari, so a family that tapped the private link in Safari and then
+        // installed the app lands here with placeholders and no way to re-tap it.
+        // Doubles as recovery after storage is cleared.
+        const ConfigBox = () => {
+            const [text, setText] = useState('');
+            const [failed, setFailed] = useState(false);
+
+            if (HAS_CONFIG) return null;
+
+            const submit = () => {
+                const cfg = parseConfig(text);
+                if (!cfg) {
+                    setFailed(true);
+                    return;
+                }
+                try {
+                    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+                } catch (e) {
+                    console.error('Config save error:', e);
+                    setFailed(true);
+                    return;
+                }
+                // Reload so NAME_MAP and WRITE_TOKEN are rebuilt from the new config.
+                location.reload();
+            };
+
+            return (
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mb-6">
+                    <p className="font-semibold text-yellow-900 mb-1">🔑 Nedostaju imena</p>
+                    <p className="text-sm text-yellow-800 mb-3">
+                        Zalijepite privatni link iz WhatsApp grupe da se prikažu prava imena i da spremanje radi.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                            type="text"
+                            value={text}
+                            onChange={(e) => { setText(e.target.value); setFailed(false); }}
+                            placeholder="https://ummpf.github.io/brum/#cfg=..."
+                            className="flex-1 min-h-12 px-3 rounded border border-yellow-400 bg-white"
+                            autoComplete="off"
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            spellCheck="false"
+                        />
+                        <button
+                            onClick={submit}
+                            className="bg-yellow-600 text-white px-6 min-h-12 rounded-lg font-semibold hover:bg-yellow-700"
+                        >
+                            Postavi
+                        </button>
+                    </div>
+                    {failed && (
+                        <p className="text-sm text-red-600 mt-2">
+                            Link nije ispravan. Provjerite jeste li kopirali cijeli link.
+                        </p>
+                    )}
+                </div>
+            );
+        };
+
+        const CarpoolApp = () => {
+            const practices = [
+                { id: 'pon', day: 'Pon', time: '20:00-21:15' },
+                { id: 'uto', day: 'Uto', time: '18:30-20:00' },
+                { id: 'cet', day: 'Čet', time: '18:30-20:00' },
+                { id: 'pet', day: 'Pet', time: '17:00-18:30' },
+                { id: 'sub', day: 'Sub', time: '12:00-13:30' }
+            ];
+
+            // Use internal IDs for storage
+            const childrenIds = ['c2', 'c1', 'c3']; // Fixed display order (by ID)
+            const familyIds = Object.keys(NAME_MAP.families);
+
+            const getMondayOfWeek = (date) => {
+                const d = new Date(date);
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                return new Date(d.setDate(diff));
+            };
+
+            const getCurrentWeekStart = () => {
+                const now = new Date();
+                const day = now.getDay();
+                const hour = now.getHours();
+                
+                // Subota poslije 15:00 ili nedjelja = planiraj sljedeći tjedan
+                if ((day === 6 && hour >= 15) || day === 0) {
+                    const nextWeek = new Date(now);
+                    // Koliko dana do sljedećeg ponedjeljka
+                    const daysToAdd = day === 0 ? 1 : 2; // Nedjelja=1 dan, Subota=2 dana
+                    nextWeek.setDate(now.getDate() + daysToAdd);
+                    return getMondayOfWeek(nextWeek);
+                }
+                
+                return getMondayOfWeek(now);
+            };
+
+            const formatWeekRange = (mondayDate) => {
+                const monday = new Date(mondayDate);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+                
+                const formatDate = (d) => {
+                    return d.toLocaleDateString('hr-HR', { day: 'numeric', month: 'short', year: 'numeric' });
+                };
+                
+                return `${formatDate(monday)} - ${formatDate(sunday)}`;
+            };
+
+            const getWeekKey = (mondayDate) => {
+                return mondayDate.toISOString().split('T')[0];
+            };
+
+            const [currentWeekStart] = useState(getCurrentWeekStart());
+            const [weekHistory, setWeekHistory] = useState({});
+            const [showResults, setShowResults] = useState(false);
+            const [isLoading, setIsLoading] = useState(true);
+            const [connectionStatus, setConnectionStatus] = useState('checking');
+            // idle | saving | saved | error | unauthorized
+            const [saveState, setSaveState] = useState('idle');
+            const [savedAt, setSavedAt] = useState(null);
+            const [pendingSave, setPendingSave] = useState(null);
+            const [copied, setCopied] = useState(false);
+
+            const loadFromSheets = async () => {
+                if (SCRIPT_URL === 'YOUR_SCRIPT_URL_HERE') {
+                    console.log('Google Sheets not configured yet');
+                    return false;
+                }
+
+                try {
+                    const response = await fetch(SCRIPT_URL);
+                    if (response.ok) {
+                        const data = await response.json();
+                        setWeekHistory(data);
+                        setConnectionStatus('connected');
+                        return true;
+                    }
+                } catch (error) {
+                    console.error('Google Sheets load error:', error);
+                }
+                return false;
+            };
+
+            const saveToSheets = async (data) => {
+                if (SCRIPT_URL === 'YOUR_SCRIPT_URL_HERE') {
+                    return false;
+                }
+
+                setSaveState('saving');
+                try {
+                    // text/plain keeps this a simple request, so no preflight and
+                    // no need for no-cors — which means the response is readable
+                    // and a failed save can finally be reported as one.
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ token: WRITE_TOKEN || '', data })
+                    });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+                    const out = await res.json();
+                    if (out && out.ok) {
+                        setConnectionStatus('connected');
+                        setSavedAt(out.savedAt ? new Date(out.savedAt) : new Date());
+                        setPendingSave(null);
+                        setSaveState('saved');
+                        return true;
+                    }
+                    if (out && out.error === 'unauthorized') {
+                        setPendingSave(data);
+                        setSaveState('unauthorized');
+                        return false;
+                    }
+                    throw new Error(out && out.error ? out.error : 'unknown');
+                } catch (error) {
+                    console.error('Google Sheets save error:', error);
+                    setPendingSave(data);
+                    setSaveState('error');
+                    return false;
+                }
+            };
+
+            useEffect(() => {
+                const loadData = async () => {
+                    setIsLoading(true);
+                    const sheetsSuccess = await loadFromSheets();
+                    
+                    if (!sheetsSuccess) {
+                        try {
+                            const saved = localStorage.getItem('carpoolHistory');
+                            if (saved) {
+                                setWeekHistory(JSON.parse(saved));
+                            }
+                            setConnectionStatus('local');
+                        } catch (error) {
+                            console.error('LocalStorage load error:', error);
+                            setConnectionStatus('local');
+                        }
+                    }
+                    setIsLoading(false);
+                };
+                
+                loadData();
+
+                const interval = setInterval(() => {
+                    if (connectionStatus === 'connected') {
+                        loadFromSheets();
+                    }
+                }, 30000);
+
+                return () => clearInterval(interval);
+            }, []);
+
+            const saveData = async (newHistory) => {
+                setWeekHistory(newHistory);
+                
+                // localStorage first, so nothing is lost when the remote save fails
+                try {
+                    localStorage.setItem('carpoolHistory', JSON.stringify(newHistory));
+                } catch (error) {
+                    console.error('LocalStorage save error:', error);
+                }
+
+                // Always attempt the remote save. The old code skipped it unless the
+                // initial load had succeeded, which silently stranded anyone who
+                // opened the app offline. A failure is now visible, so just try.
+                await saveToSheets(newHistory);
+            };
+
+            const getCurrentWeekData = () => {
+                const weekKey = getWeekKey(currentWeekStart);
+                return weekHistory[weekKey] || { selections: {}, assignments: {}, lastGenerated: null, lastModified: null };
+            };
+
+            const weekData = getCurrentWeekData();
+            const selections = weekData.selections;
+            const assignments = weekData.assignments;
+            const lastGenerated = weekData.lastGenerated;
+            const lastModified = weekData.lastModified;
+
+            const isDateInPast = (practiceId) => {
+                const now = new Date();
+                const today = now.getDay();
+                const hour = now.getHours();
+                const weekStart = currentWeekStart.getTime();
+                const nowWeekStart = getMondayOfWeek(now).getTime();
+                
+                // Ako prikazujemo tjedan u budućnosti, ništa nije prošlo
+                if (weekStart > nowWeekStart) return false;
+                
+                // Nedjelja ili subota poslije 15:00 = planiramo novi tjedan, sve je dostupno
+                if ((today === 6 && hour >= 15) || today === 0) return false;
+                
+                const dayMap = { 'pon': 1, 'uto': 2, 'cet': 4, 'pet': 5, 'sub': 6 };
+                
+                // Subota prije 15:00 - subota još nije prošla
+                if (today === 6 && practiceId === 'sub') return false;
+                
+                // Provjeri je li dan prošao
+                return dayMap[practiceId] < today;
+            };
+
+            const updateWeekData = (newSelections, newAssignments, newLastGenerated) => {
+                const weekKey = getWeekKey(currentWeekStart);
+                const now = new Date();
+                const newHistory = {
+                    ...weekHistory,
+                    [weekKey]: {
+                        selections: newSelections || selections,
+                        assignments: newAssignments || assignments,
+                        lastGenerated: newLastGenerated !== undefined ? newLastGenerated : lastGenerated,
+                        lastModified: now // Always update when data changes
+                    }
+                };
+                saveData(newHistory);
+            };
+
+            const toggleSelection = (item, day, type) => {
+                const key = `${item}-${day}-${type}`;
+                const newSelections = { ...selections, [key]: !selections[key] };
+                updateWeekData(newSelections, assignments, lastGenerated);
+            };
+
+            const isSelected = (item, day, type) => {
+                return selections[`${item}-${day}-${type}`] || false;
+            };
+
+            const getAttendingChildren = (day) => {
+                return childrenIds.filter(childId => isSelected(childId, day, 'child'));
+            };
+
+            const getAvailableDrivers = (day, direction) => {
+                return familyIds.filter(familyId => isSelected(familyId, day, direction));
+            };
+
+            const getFamilyColor = (familyId) => {
+                if (familyId === 'f1') return 'bg-blue-100 text-blue-800';
+                if (familyId === 'f2') return 'bg-purple-100 text-purple-800';
+                return 'bg-orange-100 text-orange-800';
+            };
+
+            // Check if there's enough data to generate schedule (only for current week, future days)
+            const hasEnoughData = () => {
+                const weekKey = getWeekKey(currentWeekStart);
+                const currentWeekData = weekHistory[weekKey] || { selections: {} };
+                const currentSelections = currentWeekData.selections;
+                
+                // Check if at least one child is attending
+                const hasChildren = practices.some(practice => {
+                    if (isDateInPast(practice.id)) return false;
+                    return childrenIds.some(childId => 
+                        currentSelections[`${childId}-${practice.id}-child`]
+                    );
+                });
+                
+                // Check if at least one family has entered availability
+                const hasDrivers = familyIds.some(familyId => {
+                    return practices.some(practice => {
+                        if (isDateInPast(practice.id)) return false;
+                        return currentSelections[`${familyId}-${practice.id}-tamo`] || 
+                               currentSelections[`${familyId}-${practice.id}-nazad`];
+                    });
+                });
+                
+                return hasChildren && hasDrivers;
+            };
+
+            const generateAssignments = () => {
+                const newAssignments = {};
+                const counts = {};
+                
+                familyIds.forEach(f => {
+                    counts[f] = 0;
+                });
+
+                practices.forEach(practice => {
+                    if (isDateInPast(practice.id)) return;
+                    
+                    const attending = getAttendingChildren(practice.id);
+                    if (attending.length === 0) return;
+
+                    const availTo = getAvailableDrivers(practice.id, 'tamo');
+                    const availFrom = getAvailableDrivers(practice.id, 'nazad');
+
+                    if (availTo.length > 0) {
+                        const driver = availTo.reduce((min, f) => counts[f] < counts[min] ? f : min);
+                        newAssignments[`${practice.id}-tamo`] = driver;
+                        counts[driver]++;
+                    }
+
+                    if (availFrom.length > 0) {
+                        const options = availFrom.filter(f => f !== newAssignments[`${practice.id}-tamo`]);
+                        const final = options.length > 0 ? options : availFrom;
+                        const driver = final.reduce((min, f) => counts[f] < counts[min] ? f : min);
+                        newAssignments[`${practice.id}-nazad`] = driver;
+                        counts[driver]++;
+                    }
+                });
+
+                const now = new Date();
+                updateWeekData(selections, newAssignments, now);
+                setShowResults(true);
+            };
+
+            const viewSchedule = () => {
+                // Just show existing schedule without regenerating
+                setShowResults(true);
+            };
+
+            const scheduleExists = () => {
+                return lastGenerated && Object.keys(assignments).length > 0;
+            };
+
+            const dataChangedSinceGeneration = () => {
+                if (!lastGenerated || !lastModified) return false;
+                return new Date(lastModified) > new Date(lastGenerated);
+            };
+
+            const resetCurrentWeek = () => {
+                const weekKey = getWeekKey(currentWeekStart);
+                const newHistory = { ...weekHistory };
+                delete newHistory[weekKey];
+                saveData(newHistory);
+                setShowResults(false);
+            };
+
+            const buildWhatsAppText = () => {
+                const lines = [];
+                lines.push('🏀 Raspored prijevoza');
+                lines.push(`Tjedan: ${formatWeekRange(currentWeekStart)}`);
+                lines.push('');
+                practices.forEach(p => {
+                    const attending = getAttendingChildren(p.id);
+                    if (attending.length === 0) return;
+                    const driverTo = assignments[`${p.id}-tamo`];
+                    const driverFrom = assignments[`${p.id}-nazad`];
+                    lines.push(`${p.day} ${p.time}`);
+                    lines.push(`  Djeca: ${attending.map(c => NAME_MAP.children[c]).join(', ')}`);
+                    lines.push(`  Tamo: ${driverTo ? NAME_MAP.families[driverTo] : '—'}`);
+                    lines.push(`  Nazad: ${driverFrom ? NAME_MAP.families[driverFrom] : '—'}`);
+                    lines.push('');
+                });
+                return lines.join('\n').trim();
+            };
+
+            const copyForWhatsApp = async () => {
+                const text = buildWhatsAppText();
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        const ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                    }
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                } catch (e) {
+                    console.error('Clipboard error:', e);
+                }
+            };
+
+            if (isLoading) {
+                return (
+                    <div className="max-w-6xl mx-auto p-4 sm:p-6 flex items-center justify-center min-h-screen">
+                        <div className="text-center">
+                            <div className="text-4xl mb-4">🏀</div>
+                            <div className="text-xl font-semibold">Učitavanje...</div>
+                        </div>
+                    </div>
+                );
+            }
+
+            const StatusBadge = () => {
+                if (saveState === 'saving') {
+                    return (
+                        <div className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded flex items-center gap-2">
+                            <div className="animate-spin">⟳</div>
+                            Spremam...
+                        </div>
+                    );
+                }
+                if (saveState === 'saved') {
+                    return (
+                        <div className="text-xs bg-green-50 text-green-600 px-3 py-1 rounded">
+                            ✓ Spremljeno u {savedAt.toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                    );
+                }
+                if (saveState === 'unauthorized') {
+                    return (
+                        <div className="text-xs bg-orange-50 text-orange-700 px-3 py-1 rounded">
+                            🔑 Otvorite privatni link za spremanje
+                        </div>
+                    );
+                }
+                if (saveState === 'error') {
+                    return (
+                        <div className="bg-red-50 border border-red-200 rounded p-2 flex flex-col sm:flex-row sm:items-center gap-2">
+                            <span className="text-xs text-red-700">⚠️ Nije spremljeno, pokušajte ponovno</span>
+                            <button
+                                onClick={() => saveToSheets(pendingSave)}
+                                className="bg-red-600 text-white text-sm px-4 min-h-12 sm:min-h-0 sm:py-2 rounded hover:bg-red-700"
+                            >
+                                Pokušaj ponovno
+                            </button>
+                        </div>
+                    );
+                }
+                if (connectionStatus === 'local') {
+                    return (
+                        <div className="text-xs bg-orange-50 text-orange-600 px-3 py-1 rounded">
+                            ⚠️ Bez veze - radi lokalno
+                        </div>
+                    );
+                }
+                return null;
+            };
+
+            if (showResults) {
+                return (
+                    <div className="max-w-6xl mx-auto p-4 sm:p-6">
+                        <ConfigBox />
+                        <div className="bg-white rounded-lg shadow p-6 mb-6">
+                            <div className="flex flex-col gap-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+                                    <div>
+                                        <h1 className="text-2xl font-bold">📋 Predloženi Raspored Prijevoza</h1>
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <div className="text-lg font-semibold text-blue-600">
+                                                Tjedan: {formatWeekRange(currentWeekStart)}
+                                            </div>
+                                            {(() => {
+                                                const now = new Date();
+                                                const day = now.getDay();
+                                                const hour = now.getHours();
+                                                if ((day === 6 && hour >= 15) || day === 0) {
+                                                    return <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded">Novi tjedan</span>;
+                                                }
+                                                return <span className="text-sm bg-blue-100 text-blue-700 px-2 py-1 rounded">Trenutni tjedan</span>;
+                                            })()}
+                                        </div>
+                                    </div>
+                                    <StatusBadge />
+                                </div>
+
+                                {(lastModified || lastGenerated) && (
+                                    <div className="flex flex-col gap-1 text-sm">
+                                        {lastModified && (
+                                            <p className="text-blue-600">
+                                                📝 Zadnja promjena: {new Date(lastModified).toLocaleString('hr-HR')}
+                                            </p>
+                                        )}
+                                        {lastGenerated && (
+                                            <p className="text-green-600">
+                                                ✅ Raspored generiran: {new Date(lastGenerated).toLocaleString('hr-HR')}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Mobile: one card per day — no horizontal scroll */}
+                        <div className="sm:hidden space-y-4 mb-6">
+                            {practices.map(p => {
+                                const attending = getAttendingChildren(p.id);
+                                const driverTo = assignments[`${p.id}-tamo`];
+                                const driverFrom = assignments[`${p.id}-nazad`];
+                                const availTo = getAvailableDrivers(p.id, 'tamo');
+                                const availFrom = getAvailableDrivers(p.id, 'nazad');
+                                return (
+                                    <div key={p.id} className="bg-white rounded-lg shadow p-4">
+                                        <div className="flex items-center justify-between mb-3 pb-2 border-b">
+                                            <div className="font-bold text-lg">{p.day}</div>
+                                            <div className="text-sm text-gray-600">{p.time}</div>
+                                        </div>
+                                        <div className="mb-3">
+                                            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Dolaze</div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {attending.map(childId => (
+                                                    <span key={childId} className="px-2 py-1 rounded text-sm bg-blue-100 text-blue-800">{NAME_MAP.children[childId]}</span>
+                                                ))}
+                                                {attending.length === 0 && <span className="text-gray-400 text-sm">Nitko</span>}
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Tamo</div>
+                                                {driverTo ? (
+                                                    <span className={`inline-block px-2 py-1 rounded text-sm ${getFamilyColor(driverTo)}`}>{NAME_MAP.families[driverTo]}</span>
+                                                ) : <span className="text-gray-400 text-sm">—</span>}
+                                            </div>
+                                            <div>
+                                                <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Nazad</div>
+                                                {driverFrom ? (
+                                                    <span className={`inline-block px-2 py-1 rounded text-sm ${getFamilyColor(driverFrom)}`}>{NAME_MAP.families[driverFrom]}</span>
+                                                ) : <span className="text-gray-400 text-sm">—</span>}
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t text-xs text-gray-500">
+                                            <span className="font-semibold">Mogu voziti</span> — tamo: {availTo.length > 0 ? availTo.map(f => NAME_MAP.families[f]).join(', ') : '—'} · nazad: {availFrom.length > 0 ? availFrom.map(f => NAME_MAP.families[f]).join(', ') : '—'}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="hidden sm:block bg-white rounded-lg shadow p-6 mb-6">
+                            <h2 className="text-lg font-bold mb-4">👦 Djeca koja dolaze</h2>
+                            <div className="overflow-x-auto px-4 sm:px-0">
+                                <table className="w-full border-collapse border">
+                                    <thead>
+                                        <tr className="bg-blue-50">
+                                            <th className="border p-2 text-center">Dijete</th>
+                                            {practices.map(p => (
+                                                <th key={p.id} className="border p-2 text-center">
+                                                    <div>{p.day}</div>
+                                                    <div className="text-xs">{p.time}</div>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {childrenIds.map(childId => (
+                                            <tr key={childId}>
+                                                <td className="border p-2 font-bold text-center">{NAME_MAP.children[childId]}</td>
+                                                {practices.map(p => (
+                                                    <td key={p.id} className="border p-2 text-center">
+                                                        {getAttendingChildren(p.id).includes(childId) ? 
+                                                            <span className="text-green-600 font-bold text-xl">✓</span> : 
+                                                            <span className="text-gray-300">—</span>
+                                                        }
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="hidden sm:block bg-white rounded-lg shadow p-6 mb-6">
+                            <h2 className="text-lg font-bold mb-4">🚗 Prijedlog vozača</h2>
+                            <div className="overflow-x-auto px-4 sm:px-0">
+                                <table className="w-full border-collapse border">
+                                    <thead>
+                                        <tr className="bg-green-50">
+                                            <th className="border p-2">Smjer</th>
+                                            {practices.map(p => (
+                                                <th key={p.id} className="border p-2 text-center">
+                                                    <div>{p.day}</div>
+                                                    <div className="text-xs">{p.time}</div>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td className="border p-2 font-bold">Tamo</td>
+                                            {practices.map(p => (
+                                                <td key={p.id} className="border p-2 text-center">
+                                                    {assignments[`${p.id}-tamo`] ? (
+                                                        <span className={`px-2 py-1 rounded text-sm ${getFamilyColor(assignments[`${p.id}-tamo`])}`}>
+                                                            {NAME_MAP.families[assignments[`${p.id}-tamo`]]}
+                                                        </span>
+                                                    ) : <span className="text-gray-400">—</span>}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                        <tr>
+                                            <td className="border p-2 font-bold">Nazad</td>
+                                            {practices.map(p => (
+                                                <td key={p.id} className="border p-2 text-center">
+                                                    {assignments[`${p.id}-nazad`] ? (
+                                                        <span className={`px-2 py-1 rounded text-sm ${getFamilyColor(assignments[`${p.id}-nazad`])}`}>
+                                                            {NAME_MAP.families[assignments[`${p.id}-nazad`]]}
+                                                        </span>
+                                                    ) : <span className="text-gray-400">—</span>}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="hidden sm:block bg-white rounded-lg shadow p-6 mb-6">
+                            <h2 className="text-lg font-bold mb-4">👥 Dostupni vozači</h2>
+                            <div className="overflow-x-auto px-4 sm:px-0">
+                                <table className="w-full border-collapse border">
+                                    <thead>
+                                        <tr className="bg-gray-50">
+                                            <th className="border p-2">Smjer</th>
+                                            {practices.map(p => (
+                                                <th key={p.id} className="border p-2 text-center">
+                                                    <div>{p.day}</div>
+                                                    <div className="text-xs">{p.time}</div>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td className="border p-2 font-bold">Tamo</td>
+                                            {practices.map(p => (
+                                                <td key={p.id} className="border p-2">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {getAvailableDrivers(p.id, 'tamo').map(familyId => (
+                                                            <span key={familyId} className={`px-2 py-1 rounded text-xs ${getFamilyColor(familyId)}`}>
+                                                                {NAME_MAP.families[familyId]}
+                                                            </span>
+                                                        ))}
+                                                        {getAvailableDrivers(p.id, 'tamo').length === 0 && (
+                                                            <span className="text-gray-400 text-xs">Nitko</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            ))}
+                                        </tr>
+                                        <tr>
+                                            <td className="border p-2 font-bold">Nazad</td>
+                                            {practices.map(p => (
+                                                <td key={p.id} className="border p-2">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {getAvailableDrivers(p.id, 'nazad').map(familyId => (
+                                                            <span key={familyId} className={`px-2 py-1 rounded text-xs ${getFamilyColor(familyId)}`}>
+                                                                {NAME_MAP.families[familyId]}
+                                                            </span>
+                                                        ))}
+                                                        {getAvailableDrivers(p.id, 'nazad').length === 0 && (
+                                                            <span className="text-gray-400 text-xs">Nitko</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-3 justify-center sm:flex-wrap">
+                            <button onClick={copyForWhatsApp} className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 w-full sm:w-auto min-h-12">
+                                {copied ? '✓ Kopirano!' : '📋 Kopiraj za WhatsApp'}
+                            </button>
+                            <button onClick={() => setShowResults(false)} className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 w-full sm:w-auto min-h-12">
+                                ✏️ Uredi Dostupnost
+                            </button>
+                            <button onClick={resetCurrentWeek} className="bg-red-500 text-white px-6 py-3 rounded-lg hover:bg-red-600 w-full sm:w-auto min-h-12">
+                                🗑️ Reset Tjedan
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-6xl mx-auto p-4 sm:p-6">
+                    <ConfigBox />
+                    <div className="bg-white rounded-lg shadow p-6 mb-6">
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+                                <div>
+                                    <h1 className="text-2xl font-bold mb-2">🏀 Tjedni Raspored Treninga</h1>
+                                    <p className="text-gray-600">Označite kada dijete dolazi i kada možete voziti</p>
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <div className="text-lg font-semibold text-blue-600">
+                                            Planiram: {formatWeekRange(currentWeekStart)}
+                                        </div>
+                                        {(() => {
+                                            const now = new Date();
+                                            const day = now.getDay();
+                                            const hour = now.getHours();
+                                            if ((day === 6 && hour >= 15) || day === 0) {
+                                                return <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded">Novi tjedan</span>;
+                                            }
+                                            return <span className="text-sm bg-blue-100 text-blue-700 px-2 py-1 rounded">Trenutni tjedan</span>;
+                                        })()}
+                                    </div>
+                                </div>
+                                <StatusBadge />
+                            </div>
+
+                            {(lastModified || lastGenerated) && (
+                                <div className="flex flex-col gap-1 text-sm">
+                                    {lastModified && (
+                                        <p className="text-blue-600">
+                                            📝 Zadnja promjena: {new Date(lastModified).toLocaleString('hr-HR')}
+                                        </p>
+                                    )}
+                                    {lastGenerated && (
+                                        <p className="text-green-600">
+                                            ✅ Raspored generiran: {new Date(lastGenerated).toLocaleString('hr-HR')}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Mobile: one card per day with kids + driver toggles — no horizontal scroll */}
+                    <div className="sm:hidden space-y-4 mb-6">
+                        {practices.map(p => {
+                            const isPast = isDateInPast(p.id);
+                            return (
+                                <div key={p.id} className={`rounded-lg shadow p-4 ${isPast ? 'bg-gray-100' : 'bg-white'}`}>
+                                    <div className="flex items-center justify-between mb-3 pb-2 border-b">
+                                        <div className="font-bold text-lg">{p.day}</div>
+                                        <div className="text-sm text-gray-600">{isPast ? '(završeno)' : p.time}</div>
+                                    </div>
+                                    <div className="mb-4">
+                                        <div className="text-xs font-semibold text-gray-500 uppercase mb-2">👦 Dijete dolazi?</div>
+                                        <div className="flex flex-col gap-1">
+                                            {childrenIds.map(childId => (
+                                                <label key={childId} className={`flex items-center justify-between min-h-12 px-3 rounded border ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-blue-50'}`}>
+                                                    <span className="font-medium">{NAME_MAP.children[childId]}</span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected(childId, p.id, 'child')}
+                                                        onChange={(e) => { e.stopPropagation(); if (!isPast) toggleSelection(childId, p.id, 'child'); }}
+                                                        disabled={isPast}
+                                                        className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                    />
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-semibold text-gray-500 uppercase mb-2">🚗 Tko može voziti?</div>
+                                        <div className="flex flex-col gap-2">
+                                            {familyIds.map(familyId => (
+                                                <div key={familyId} className="flex items-center justify-between min-h-12 px-3 rounded border">
+                                                    <span className="font-medium">{NAME_MAP.families[familyId]}</span>
+                                                    <div className="flex gap-2">
+                                                        <label className={`flex flex-col items-center justify-center min-h-12 px-3 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-green-50'}`}>
+                                                            <span className="text-xs mb-1">tamo</span>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected(familyId, p.id, 'tamo')}
+                                                                onChange={(e) => { e.stopPropagation(); if (!isPast) toggleSelection(familyId, p.id, 'tamo'); }}
+                                                                disabled={isPast}
+                                                                className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                            />
+                                                        </label>
+                                                        <label className={`flex flex-col items-center justify-center min-h-12 px-3 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-orange-50'}`}>
+                                                            <span className="text-xs mb-1">nazad</span>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected(familyId, p.id, 'nazad')}
+                                                                onChange={(e) => { e.stopPropagation(); if (!isPast) toggleSelection(familyId, p.id, 'nazad'); }}
+                                                                disabled={isPast}
+                                                                className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="hidden sm:block bg-white rounded-lg shadow p-6 mb-6">
+                        <h2 className="text-lg font-bold mb-4">👦 Koji dan će dijete ići na trening?</h2>
+                        <div className="overflow-x-auto px-4 sm:px-0">
+                            <table className="w-full border-collapse border">
+                                <thead>
+                                    <tr className="bg-blue-50">
+                                        <th className="border p-2">Dijete</th>
+                                        {practices.map(p => {
+                                            const isPast = isDateInPast(p.id);
+                                            return (
+                                                <th key={p.id} className={`border p-2 text-center ${isPast ? 'bg-gray-200' : ''}`}>
+                                                    <div>{p.day}</div>
+                                                    <div className="text-xs">{isPast ? '(završeno)' : p.time}</div>
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {childrenIds.map(childId => (
+                                        <tr key={childId}>
+                                            <td className="border p-2 font-bold">{NAME_MAP.children[childId]}</td>
+                                            {practices.map(p => {
+                                                const isPast = isDateInPast(p.id);
+                                                return (
+                                                    <td key={p.id} className="border p-2 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected(childId, p.id, 'child')}
+                                                            onChange={(e) => {
+                                                                e.stopPropagation();
+                                                                if (!isPast) toggleSelection(childId, p.id, 'child');
+                                                            }}
+                                                            disabled={isPast}
+                                                            className={`w-5 h-5 ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                                        />
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="hidden sm:block bg-white rounded-lg shadow p-6 mb-6">
+                        <h2 className="text-lg font-bold mb-4">🚗 Kada koja obitelj može voziti?</h2>
+                        <div className="overflow-x-auto px-4 sm:px-0">
+                            <table className="w-full border-collapse border">
+                                <thead>
+                                    <tr className="bg-green-50">
+                                        <th className="border p-2">Obitelj</th>
+                                        {practices.map(p => {
+                                            const isPast = isDateInPast(p.id);
+                                            return (
+                                                <th key={p.id} className={`border p-2 text-center ${isPast ? 'bg-gray-200' : ''}`}>
+                                                    <div>{p.day}</div>
+                                                    <div className="text-xs">{isPast ? '(završeno)' : p.time}</div>
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {familyIds.map(familyId => (
+                                        <tr key={familyId}>
+                                            <td className="border p-2 font-bold">{NAME_MAP.families[familyId]}</td>
+                                            {practices.map(p => {
+                                                const isPast = isDateInPast(p.id);
+                                                return (
+                                                    <td key={p.id} className="border p-2">
+                                                        <div className="flex gap-3 justify-center">
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-green-50'}`}>
+                                                                <span className="text-xs mb-1">tamo</span>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isSelected(familyId, p.id, 'tamo')}
+                                                                    onChange={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!isPast) toggleSelection(familyId, p.id, 'tamo');
+                                                                    }}
+                                                                    disabled={isPast}
+                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                                />
+                                                            </label>
+                                                            <label className={`flex flex-col items-center min-h-12 justify-center p-2 rounded ${isPast ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-orange-50'}`}>
+                                                                <span className="text-xs mb-1">nazad</span>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isSelected(familyId, p.id, 'nazad')}
+                                                                    onChange={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!isPast) toggleSelection(familyId, p.id, 'nazad');
+                                                                    }}
+                                                                    disabled={isPast}
+                                                                    className={`w-5 h-5 ${isPast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                                                />
+                                                            </label>
+                                                        </div>
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {hasEnoughData() && (
+                        <div className="text-center mt-6">
+                            {scheduleExists() && !dataChangedSinceGeneration() ? (
+                                // Schedule exists and no changes - just show it
+                                <button
+                                    onClick={viewSchedule}
+                                    className="w-full sm:w-auto px-8 py-4 rounded-lg font-bold text-lg sm:text-xl bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform hover:scale-105 transition-all"
+                                >
+                                    👁️ Pregled Rasporeda Prijevoza
+                                </button>
+                            ) : (
+                                // No schedule or data changed - generate new
+                                <div className="space-y-3">
+                                    {dataChangedSinceGeneration() && (
+                                        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
+                                            <p className="text-yellow-800 font-semibold text-sm">
+                                                ⚠️ Podaci su promijenjeni nakon zadnjeg generiranja. Kliknite za novi raspored.
+                                            </p>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={generateAssignments}
+                                        className="w-full sm:w-auto px-8 py-4 rounded-lg font-bold text-lg sm:text-xl bg-green-600 text-white hover:bg-green-700 shadow-lg transform hover:scale-105 transition-all"
+                                    >
+                                        ✅ Gotovo - Generiraj Raspored Prijevoza
+                                    </button>
+                                    {scheduleExists() && (
+                                        <button
+                                            onClick={viewSchedule}
+                                            className="w-full sm:w-auto sm:ml-4 px-6 py-4 rounded-lg font-semibold text-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-all"
+                                        >
+                                            👁️ Prikaži Stari Raspored
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                            <p className="text-sm text-gray-600 mt-2">
+                                {scheduleExists() && !dataChangedSinceGeneration() 
+                                    ? 'Kliknite za pregled već generiranog rasporeda'
+                                    : 'Kliknite kada ste završili sa unosom dostupnosti'
+                                }
+                            </p>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<CarpoolApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
