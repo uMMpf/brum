@@ -81,7 +81,10 @@
         // UTF-8-safe base64 so Croatian diacritics survive a round trip
         const b64dec = (s) => decodeURIComponent(escape(atob(s)));
 
-        // A config is only usable if it carries both name maps.
+        // A config is only usable if it carries both name maps. Any extra field
+        // (e.g. an optional `f` naming one family) is passed through untouched and
+        // re-stored, so a future per-family link stays forward-compatible. Nothing
+        // reads `f` today: the family is chosen on the device, not by the link.
         const normalizeConfig = (cfg) =>
             (cfg && cfg.n && cfg.n.children && cfg.n.families) ? cfg : null;
 
@@ -241,15 +244,28 @@
             const [saveState, setSaveState] = useState('idle');
             const [savedAt, setSavedAt] = useState(null);
             const [pendingSave, setPendingSave] = useState(null);
-            const [myFamily, setMyFamily] = useState(() => {
+            const [photoBusy, setPhotoBusy] = useState(false);
+            const [photoNote, setPhotoNote] = useState('');
+
+            // Nothing is ever preselected. Until this device picks a family the
+            // editing matrix stays locked behind "Koja obitelj?".
+            // The stored value is the DEVICE's family; a later switch is
+            // session-only, so entering once on another family's behalf can never
+            // silently persist into the next visit — that was the whole bug.
+            const [deviceFamily, setDeviceFamily] = useState(() => {
                 try {
                     const s = localStorage.getItem(MY_FAMILY_KEY);
                     if (s && FAMILY_IDS.indexOf(s) !== -1) return s;
                 } catch (e) {}
-                return FAMILY_IDS[0];
+                return null;
             });
+            const [activeFamily, setActiveFamily] = useState(null);
+            const [pendingFamily, setPendingFamily] = useState(null);
+            const [switchConfirmed, setSwitchConfirmed] = useState(false);
 
-            const myChild = childOfFamily(myFamily);
+            const myFamily = activeFamily || deviceFamily;
+            const hasFamily = !!myFamily;
+            const myChild = hasFamily ? childOfFamily(myFamily) : null;
 
             const loadFromSheets = async () => {
                 if (SCRIPT_URL === 'YOUR_SCRIPT_URL_HERE') {
@@ -350,6 +366,19 @@
             const assignments = weekData.assignments || {};
             const lastGenerated = weekData.lastGenerated;
             const lastModified = weekData.lastModified;
+            const lastModifiedBy = weekData.lastModifiedBy;
+
+            // "Zadnja promjena: <obitelj>, DD.MM. HH:MM" — only when the record
+            // carries the attribution. Legacy weeks render nothing.
+            const lastEditLine = () => {
+                if (!lastModifiedBy || !lastModified) return null;
+                const who = NAME_MAP.families[lastModifiedBy];
+                if (!who) return null;
+                const d = new Date(lastModified);
+                if (isNaN(d.getTime())) return null;
+                const p2 = (n) => String(n).padStart(2, '0');
+                return `Zadnja promjena: ${who}, ${p2(d.getDate())}.${p2(d.getMonth() + 1)}. ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+            };
 
             const isDateInPast = (practiceId) => {
                 const now = new Date();
@@ -377,7 +406,11 @@
                         selections: newSelections || selections,
                         assignments: newAssignments || assignments,
                         lastGenerated: newLastGenerated !== undefined ? newLastGenerated : lastGenerated,
-                        lastModified: now
+                        lastModified: now,
+                        // Additive optional key. The family being edited FOR, which
+                        // is the active one, not the device's. Older records simply
+                        // lack it and render without the attribution line.
+                        lastModifiedBy: myFamily || undefined
                     }
                 };
                 saveData(newHistory);
@@ -518,13 +551,29 @@
                 }
             };
 
-            const chooseFamily = (fid) => {
-                setMyFamily(fid);
+            // First pick on this device: stored, no confirm.
+            const pickDeviceFamily = (fid) => {
+                setDeviceFamily(fid);
+                setActiveFamily(null);
                 try {
                     localStorage.setItem(MY_FAMILY_KEY, fid);
                 } catch (e) {
                     console.error('Family save error:', e);
                 }
+            };
+
+            // Later switches: session-only, and confirmed once per session.
+            const requestFamily = (fid) => {
+                if (fid === myFamily) return;
+                if (fid === deviceFamily) { setActiveFamily(null); return; }
+                if (switchConfirmed) { setActiveFamily(fid); return; }
+                setPendingFamily(fid);
+            };
+
+            const confirmSwitch = () => {
+                setActiveFamily(pendingFamily);
+                setSwitchConfirmed(true);
+                setPendingFamily(null);
             };
 
             // Uses the generated schedule when there is one, otherwise falls back
@@ -555,6 +604,111 @@
                     lines.push('');
                 });
                 return lines.join('\n').trim();
+            };
+
+            // Renders the GENERATED schedule to a PNG. Every name comes from the
+            // runtime NAME_MAP, so with no config it draws the placeholders.
+            const drawScheduleCanvas = () => {
+                const W = 1080, PAD = 64, ROW = 192;
+                const rows = PRACTICES.map(p => ({
+                    p,
+                    kids: attendingOn(p.id).map(c => NAME_MAP.children[c]),
+                    to: assignments[`${p.id}-tamo`] ? NAME_MAP.families[assignments[`${p.id}-tamo`]] : null,
+                    from: assignments[`${p.id}-nazad`] ? NAME_MAP.families[assignments[`${p.id}-nazad`]] : null
+                }));
+
+                const canvas = document.createElement('canvas');
+                canvas.width = W;
+                canvas.height = PAD * 2 + 140 + rows.length * ROW;
+                const g = canvas.getContext('2d');
+
+                let archivo = false;
+                try { archivo = document.fonts.check('800 32px Archivo'); } catch (e) {}
+                const FF = archivo ? 'Archivo, sans-serif' : 'system-ui, -apple-system, sans-serif';
+
+                g.fillStyle = '#f3f2f2';
+                g.fillRect(0, 0, canvas.width, canvas.height);
+                g.textBaseline = 'top';
+
+                g.fillStyle = '#201e1d';
+                g.font = `800 46px ${FF}`;
+                g.fillText('RASPORED PRIJEVOZA', PAD, PAD);
+                g.font = `800 32px ${FF}`;
+                g.fillText(formatWeekRange(weekStart).toUpperCase(), PAD, PAD + 62);
+                g.fillRect(PAD, PAD + 112, W - PAD * 2, 4);
+
+                let y = PAD + 140;
+                const colW = (W - PAD * 2) / 2;
+                rows.forEach(r => {
+                    g.fillStyle = '#201e1d';
+                    g.font = `800 40px ${FF}`;
+                    g.fillText(r.p.day, PAD, y);
+
+                    g.font = `400 26px ${FF}`;
+                    g.fillStyle = '#6f6b68';
+                    const t = startTime(r.p);
+                    g.fillText(t, W - PAD - g.measureText(t).width, y + 10);
+
+                    g.font = `400 24px ${FF}`;
+                    g.fillText(r.kids.length ? 'Djeca: ' + r.kids.join(', ') : 'Nitko ne dolazi', PAD, y + 54);
+
+                    [['ODVOZ', r.to, PAD], ['POVRATAK', r.from, PAD + colW]].forEach(([label, val, cx]) => {
+                        g.font = `800 20px ${FF}`;
+                        g.fillStyle = '#6f6b68';
+                        g.fillText(label, cx, y + 94);
+                        g.font = `800 32px ${FF}`;
+                        if (val) {
+                            g.fillStyle = '#201e1d';
+                            g.fillText(val, cx, y + 118);
+                        } else if (r.kids.length) {
+                            g.fillStyle = '#ec3013';
+                            g.fillText('nema vozača', cx, y + 118);
+                        } else {
+                            g.fillStyle = '#b9b7b4';
+                            g.fillText('—', cx, y + 118);
+                        }
+                    });
+
+                    // clear of the 32 px value text above (ends ~y+156)
+                    g.fillStyle = '#b9b7b4';
+                    g.fillRect(PAD, y + ROW - 18, W - PAD * 2, 2);
+                    y += ROW;
+                });
+
+                return canvas;
+            };
+
+            const sharePhoto = async () => {
+                setPhotoNote('');
+                setPhotoBusy(true);
+                try {
+                    const canvas = drawScheduleCanvas();
+                    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+                    if (!blob) throw new Error('render failed');
+                    const file = new File([blob], `raspored-${weekKey}.png`, { type: 'image/png' });
+
+                    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file] });
+                    } else {
+                        // No file sharing (desktop, older Android): save the PNG instead.
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = file.name;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), 5000);
+                        setPhotoNote('Slika je spremljena na uređaj.');
+                    }
+                } catch (e) {
+                    if (!e || e.name !== 'AbortError') {   // AbortError = share sheet dismissed
+                        console.error('Share error:', e);
+                        setPhotoNote('Slanje nije uspjelo. Probaj "Kopiraj tekst".');
+                    }
+                } finally {
+                    setPhotoBusy(false);
+                }
             };
 
             const copyForWhatsApp = async () => {
@@ -717,7 +871,7 @@
                     onClick={copyForWhatsApp}
                     className="mt-5 h-12 w-full border-2 border-[#201e1d] text-[12px] font-extrabold tracking-[0.08em] uppercase"
                 >
-                    {copied ? '✓ Kopirano' : 'Kopiraj za WhatsApp'}
+                    {copied ? '✓ Kopirano' : 'Kopiraj tekst'}
                 </button>
             );
 
@@ -737,7 +891,9 @@
                         {(lastModified || lastGenerated) && (
                             <div className="mt-3 text-[11px] text-[#6f6b68] leading-relaxed">
                                 {lastGenerated && <div>Generirano: {new Date(lastGenerated).toLocaleString('hr-HR')}</div>}
-                                {lastModified && <div>Zadnja promjena: {new Date(lastModified).toLocaleString('hr-HR')}</div>}
+                                {lastEditLine()
+                                    ? <div>{lastEditLine()}</div>
+                                    : lastModified && <div>Zadnja promjena: {new Date(lastModified).toLocaleString('hr-HR')}</div>}
                             </div>
                         )}
 
@@ -799,7 +955,25 @@
                             );
                         })}
 
-                        <CopyButton />
+                        <button
+                            type="button"
+                            onClick={sharePhoto}
+                            disabled={photoBusy}
+                            className="mt-5 min-h-12 w-full border border-[#201e1d] px-3 py-2 text-[12px] font-semibold leading-snug disabled:opacity-60"
+                        >
+                            {photoBusy ? 'Pripremam…' : 'Podijeli fotku rasporeda na WhatsApp'}
+                        </button>
+                        {photoNote && (
+                            <p className="mt-2 text-[11px] text-[#6f6b68] leading-snug">{photoNote}</p>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={copyForWhatsApp}
+                            className="mt-3 h-12 w-full border border-[#201e1d] text-[12px] font-semibold"
+                        >
+                            {copied ? '✓ Kopirano' : 'Kopiraj tekst'}
+                        </button>
 
                         <button
                             type="button"
@@ -833,6 +1007,10 @@
                     <p className="text-[14px] text-[#6f6b68] mt-2">Označi kad dijete dolazi i kad možeš voziti</p>
 
                     <WeekNav />
+
+                    {lastEditLine() && (
+                        <p className="mt-3 text-[11px] text-[#6f6b68]">{lastEditLine()}</p>
+                    )}
 
                     {askNewWeek && (
                         <div className="mt-3 border-2 border-[#201e1d] px-3 py-3 flex items-center justify-between gap-3">
@@ -902,28 +1080,80 @@
 
                     <Rule />
 
-                    {/* R2 — MOJA OBITELJ */}
-                    <SectionLabel>Moja obitelj</SectionLabel>
-                    <div className="grid grid-cols-3 border-2 border-[#201e1d]">
-                        {FAMILY_IDS.map((fid, i) => (
-                            <button
-                                key={fid}
-                                type="button"
-                                onClick={() => chooseFamily(fid)}
-                                aria-pressed={myFamily === fid}
-                                title={NAME_MAP.families[fid]}
-                                className={`h-12 px-1 text-[13px] truncate ${i > 0 ? 'border-l-2 border-[#201e1d]' : ''} ${
-                                    myFamily === fid ? 'bg-[#ec3013] text-white font-extrabold' : 'bg-white font-semibold'
-                                }`}
-                            >
-                                {NAME_MAP.families[fid]}
-                            </button>
-                        ))}
-                    </div>
+                    {/* R2 — MOJA OBITELJ. Hidden until this device has chosen;
+                        the blocking prompt below does that job first. */}
+                    {hasFamily && (
+                        <div>
+                            <SectionLabel>Moja obitelj</SectionLabel>
+                            <div className="grid grid-cols-3 border-2 border-[#201e1d]">
+                                {FAMILY_IDS.map((fid, i) => (
+                                    <button
+                                        key={fid}
+                                        type="button"
+                                        onClick={() => requestFamily(fid)}
+                                        aria-pressed={myFamily === fid}
+                                        title={NAME_MAP.families[fid]}
+                                        className={`h-12 px-1 text-[13px] truncate ${i > 0 ? 'border-l-2 border-[#201e1d]' : ''} ${
+                                            myFamily === fid ? 'bg-[#ec3013] text-white font-extrabold' : 'bg-white font-semibold'
+                                        }`}
+                                    >
+                                        {NAME_MAP.families[fid]}
+                                    </button>
+                                ))}
+                            </div>
 
-                    <Rule />
+                            {activeFamily && (
+                                <p className="mt-2 text-[11px] text-[#ec3013] font-semibold leading-snug">
+                                    Unosiš za {NAME_MAP.families[activeFamily]}. Nakon zatvaranja aplikacije vraća se na {NAME_MAP.families[deviceFamily]}.
+                                </p>
+                            )}
 
-                    {/* R3 — editing surface */}
+                            {pendingFamily && (
+                                <div className="mt-3 border-2 border-[#ec3013] px-3 py-3">
+                                    <p className="text-[13px] font-semibold leading-snug mb-3">
+                                        Unosiš za obitelj {NAME_MAP.families[pendingFamily]}, ne za svoju. Nastaviti?
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={confirmSwitch}
+                                            className="h-11 px-4 bg-[#ec3013] text-white text-[12px] font-extrabold tracking-[0.08em] uppercase"
+                                        >Da</button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPendingFamily(null)}
+                                            className="h-11 px-4 border border-[#201e1d] text-[12px] font-extrabold tracking-[0.08em] uppercase"
+                                        >Ne</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <Rule />
+                        </div>
+                    )}
+
+                    {/* R3 — editing surface, gated behind the family choice */}
+                    {!hasFamily ? (
+                        <div className="border-2 border-[#201e1d] p-4">
+                            <p className="text-[17px] font-extrabold uppercase tracking-[0.04em]">Koja obitelj?</p>
+                            <p className="text-[12px] text-[#6f6b68] leading-snug mt-2 mb-4">
+                                Odaberi obitelj da otključaš unos. Pamti se na ovom uređaju.
+                            </p>
+                            <div className="flex flex-col gap-2">
+                                {FAMILY_IDS.map(fid => (
+                                    <button
+                                        key={fid}
+                                        type="button"
+                                        onClick={() => pickDeviceFamily(fid)}
+                                        className="min-h-14 w-full bg-[#201e1d] text-white text-[16px] font-extrabold px-3 break-words"
+                                    >
+                                        {NAME_MAP.families[fid]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                    <div>
                     <SectionLabel>
                         Tjedan za: {NAME_MAP.children[myChild]} / {NAME_MAP.families[myFamily]}
                     </SectionLabel>
@@ -950,8 +1180,10 @@
                     <p className="text-[13px] text-[#6f6b68] leading-snug mt-4">
                         Jedan tap po polju — cijeli tjedan bez otvaranja dana. Odabir obitelji se pamti.
                     </p>
+                    </div>
+                    )}
 
-                    {hasEnoughData() && (
+                    {hasFamily && hasEnoughData() && (
                         <div className="mt-5">
                             {scheduleExists() && !dataChangedSinceGeneration() ? (
                                 <button
