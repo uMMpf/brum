@@ -190,11 +190,18 @@
         const MONTHS = ['siječnja', 'veljače', 'ožujka', 'travnja', 'svibnja', 'lipnja',
                         'srpnja', 'kolovoza', 'rujna', 'listopada', 'studenoga', 'prosinca'];
 
+        // Week starts are compared by DATE, so they must be normalised to local
+        // midnight. Keeping the time-of-day made `weekStart` (computed once at
+        // mount) compare as earlier than a freshly computed monday-of-today,
+        // which marked every day of the current week as past and locked the
+        // whole editing matrix.
         const getMondayOfWeek = (date) => {
             const d = new Date(date);
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-            return new Date(d.setDate(diff));
+            d.setDate(diff);
+            d.setHours(0, 0, 0, 0);
+            return d;
         };
 
         const getCurrentWeekStart = () => {
@@ -1159,6 +1166,15 @@
                     <SectionLabel>
                         Tjedan za: {NAME_MAP.children[myChild]} / {NAME_MAP.families[myFamily]}
                     </SectionLabel>
+
+                    {/* Nudge only while there is something to do: at least one day
+                        editable and nothing ticked yet for this family. */}
+                    {PRACTICES.some(p => !isLocked(p.id)) &&
+                     PRACTICES.every(p => selections[`${myChild}-${p.id}-child`] !== true
+                                       && selections[`${myFamily}-${p.id}-tamo`] !== true
+                                       && selections[`${myFamily}-${p.id}-nazad`] !== true) && (
+                        <p className="text-[12px] text-[#6f6b68] -mt-2 mb-3">Odaberi termine:</p>
+                    )}
 
                     {/* group headers: what the child does vs what the family drives */}
                     <div style={editCols} className="mb-1 items-end">
