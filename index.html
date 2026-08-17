@@ -775,25 +775,34 @@
             const Gap = () => <div className="justify-self-center w-px h-full bg-[#d6d4d2]"></div>;
             const tableCols = { display: 'grid', gridTemplateColumns: '32px 1fr 1fr 1fr', gap: '6px' };
 
-            const OverviewCell = ({ state }) => {
-                if (state === 'on') return <div className="h-[34px] bg-[#201e1d]"></div>;
-                if (state === 'off') return <div className="h-[34px] bg-[#e6e5e3]"></div>;
-                return <div className="h-[34px] border border-dashed border-[#b9b7b4]"></div>;
-            };
+            // Read-only heatmap: small flat marks centred in the column, deliberately
+            // nothing like the big bordered cells of the editing matrix below.
+            const OverviewCell = ({ state }) => (
+                <div className="h-[30px] flex items-center justify-center">
+                    {state === 'on' && <div className="w-5 h-5 bg-[#201e1d]"></div>}
+                    {state === 'off' && <div className="w-5 h-5 bg-[#e6e5e3]"></div>}
+                    {state === 'empty' && <div className="w-5 h-5 border border-dashed border-[#b9b7b4]"></div>}
+                </div>
+            );
 
+            // Same mark scale as the overview rows above it.
             const CoverageCell = ({ dayId, leg }) => {
                 const c = coverage(dayId, leg);
                 if (c.kind === 'none') {
-                    return <div className="h-[34px] flex items-center justify-center text-[#b9b7b4] text-[13px]">·</div>;
+                    return <div className="h-[30px] flex items-center justify-center text-[#b9b7b4] text-[12px]">·</div>;
                 }
                 if (c.kind === 'missing') {
-                    return <div className="pebble h-[34px] bg-[#ec3013] flex items-center justify-center text-white text-[15px] font-extrabold">—</div>;
+                    return (
+                        <div className="h-[30px] flex items-center justify-center">
+                            <div className="pebble w-5 h-5 bg-[#ec3013] flex items-center justify-center text-white text-[12px] font-extrabold leading-none">–</div>
+                        </div>
+                    );
                 }
                 // One or several families: plain ink numbers, no emphasis either way.
                 return (
-                    <div className="h-[34px] flex items-center justify-center gap-1.5">
+                    <div className="h-[30px] flex items-center justify-center gap-1.5">
                         {c.drivers.map(f => (
-                            <span key={f} className="text-[#201e1d] text-[14px] font-extrabold">{familyNumber(f)}</span>
+                            <span key={f} className="text-[#201e1d] text-[13px] font-extrabold leading-none">{familyNumber(f)}</span>
                         ))}
                     </div>
                 );
@@ -1031,16 +1040,16 @@
                     <div style={gridCols} className="mb-1">
                         <div></div>
                         {PRACTICES.map(p => (
-                            <div key={p.id} className="text-center">
-                                <div className="text-[13px] font-extrabold">{p.day}</div>
-                                <div className="text-[11px] text-[#6f6b68]">{startTime(p)}</div>
+                            <div key={p.id} className="text-center leading-tight">
+                                <div className="text-[12px] font-extrabold">{p.day}</div>
+                                <div className="text-[10px] text-[#6f6b68]">{startTime(p)}</div>
                             </div>
                         ))}
                     </div>
 
                     {CHILD_IDS.map(childId => (
-                        <div key={childId} style={gridCols} className="mb-1 items-center">
-                            <div className="text-[14px] font-extrabold truncate pr-1" title={NAME_MAP.children[childId]}>
+                        <div key={childId} style={gridCols} className="mb-0.5 items-center">
+                            <div className="text-[13px] font-extrabold truncate pr-1" title={NAME_MAP.children[childId]}>
                                 {NAME_MAP.children[childId]}
                             </div>
                             {PRACTICES.map(p => (
@@ -1050,20 +1059,20 @@
                     ))}
 
                     {/* R1 — coverage rows, one per leg (delta vs prototype) */}
-                    <div className="border-t-2 border-[#201e1d] mt-3 pt-3">
-                        <div style={gridCols} className="mb-1 items-center">
-                            <div className="text-[14px] font-extrabold truncate pr-1">Odvoz</div>
+                    <div className="border-t-2 border-[#201e1d] mt-2 pt-2">
+                        <div style={gridCols} className="mb-0.5 items-center">
+                            <div className="text-[13px] font-extrabold truncate pr-1">Odvoz</div>
                             {PRACTICES.map(p => <CoverageCell key={p.id} dayId={p.id} leg="tamo" />)}
                         </div>
                         <div style={gridCols} className="items-center">
-                            <div className="text-[14px] font-extrabold truncate pr-1">Povratak</div>
+                            <div className="text-[13px] font-extrabold truncate pr-1">Povratak</div>
                             {PRACTICES.map(p => <CoverageCell key={p.id} dayId={p.id} leg="nazad" />)}
                         </div>
                     </div>
 
                     {/* One row at 390 px (R1): 10 px, tight gaps, swatches separate
                         the items so the "·" dividers are not needed to fit. */}
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-x-1.5 gap-y-1 text-[10px] leading-none text-[#6f6b68] [&>span]:whitespace-nowrap">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-1.5 gap-y-1 text-[10px] leading-none text-[#6f6b68] [&>span]:whitespace-nowrap">
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#201e1d] inline-block"></span>dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#e6e5e3] inline-block"></span>ne dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 border border-dashed border-[#b9b7b4] inline-block"></span>još prazno</span>
