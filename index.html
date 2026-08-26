@@ -216,8 +216,12 @@
 
         const CHILD_IDS = ['c2', 'c1', 'c3'];   // fixed display order, unchanged
         const FAMILY_IDS = Object.keys(NAME_MAP.families);
-        // Family N drives child N — the pairing the "TJEDAN ZA" header shows.
-        const childOfFamily = (familyId) => 'c' + familyId.slice(1);
+        // Family -> child. NOT index-based: f1's child is c2 and f2's is c1.
+        // The index assumption shipped in the redesign and silently wrote every
+        // f1/f2 attendance tick onto the other family's child until 26 Aug.
+        // IDs only, so this is safe to commit.
+        const FAMILY_CHILD = { f1: 'c2', f2: 'c1', f3: 'c3' };
+        const childOfFamily = (familyId) => FAMILY_CHILD[familyId] || null;
         const familyNumber = (familyId) => FAMILY_IDS.indexOf(familyId) + 1;
 
         const MONTHS = ['siječnja', 'veljače', 'ožujka', 'travnja', 'svibnja', 'lipnja',
