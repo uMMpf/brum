@@ -27,8 +27,14 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Brum">
 
+    <!-- Warm the TCP+TLS handshake for every origin this page touches. -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://script.google.com">
+    <link rel="preconnect" href="https://script.googleusercontent.com">
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap" rel="stylesheet">
 
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -168,6 +174,33 @@
 
         const WRITE_TOKEN = CFG?.k || null;
 
+        // Cached weeks, read once so the first render can paint real UI instead of
+        // a spinner. The network round trip to Apps Script is seconds long, so the
+        // cache is the fast path and the fetch merely revalidates.
+        const CACHED_HISTORY = (() => {
+            try {
+                const s = localStorage.getItem('carpoolHistory');
+                const parsed = s ? JSON.parse(s) : null;
+                return (parsed && typeof parsed === 'object' && Object.keys(parsed).length) ? parsed : null;
+            } catch (e) {
+                return null;
+            }
+        })();
+
+        // Newest write per week wins, so a local edit that has not reached the sheet
+        // yet is not clobbered by the revalidation response.
+        const mergeHistories = (local, remote) => {
+            const out = { ...(remote || {}) };
+            Object.keys(local || {}).forEach(k => {
+                const l = local[k], r = out[k];
+                if (!r) { out[k] = l; return; }
+                const lt = l && l.lastModified ? new Date(l.lastModified).getTime() : 0;
+                const rt = r && r.lastModified ? new Date(r.lastModified).getTime() : 0;
+                if (lt > rt) out[k] = l;
+            });
+            return out;
+        };
+
         // ---- presentation layer ----------------------------------------------
 
         const MY_FAMILY_KEY = 'carpoolMyFamily';
@@ -278,8 +311,10 @@
 
         const CarpoolApp = () => {
             const [weekStart, setWeekStart] = useState(getCurrentWeekStart());
-            const [weekHistory, setWeekHistory] = useState({});
-            const [isLoading, setIsLoading] = useState(true);
+            const [weekHistory, setWeekHistory] = useState(CACHED_HISTORY || {});
+            // Blocking loader only when there is genuinely nothing to show.
+            const [isLoading, setIsLoading] = useState(!CACHED_HISTORY);
+            const [isRefreshing, setIsRefreshing] = useState(false);
             const [showResults, setShowResults] = useState(false);
             const [askNewWeek, setAskNewWeek] = useState(false);
             const [unlockPast, setUnlockPast] = useState(false);
@@ -287,8 +322,9 @@
             const [saveState, setSaveState] = useState('idle');
             const [savedAt, setSavedAt] = useState(null);
             const [pendingSave, setPendingSave] = useState(null);
-            const [photoBusy, setPhotoBusy] = useState(false);
+            const [photoFile, setPhotoFile] = useState(null);
             const [photoNote, setPhotoNote] = useState('');
+            const [photoErr, setPhotoErr] = useState('');
 
             // Nothing is ever preselected. Until this device picks a family the
             // editing matrix stays locked behind "Koja obitelj?".
@@ -319,7 +355,11 @@
                     const response = await fetch(SCRIPT_URL);
                     if (response.ok) {
                         const data = await response.json();
-                        setWeekHistory(data);
+                        setWeekHistory(prev => {
+                            const merged = mergeHistories(prev, data);
+                            try { localStorage.setItem('carpoolHistory', JSON.stringify(merged)); } catch (e) {}
+                            return merged;
+                        });
                         return true;
                     }
                 } catch (error) {
@@ -367,17 +407,13 @@
             };
 
             useEffect(() => {
+                // Stale-while-revalidate. With a cache we are already showing real
+                // UI, so this is a background refresh; without one it is the only
+                // source of data and the ball stays up until it lands.
                 const loadData = async () => {
-                    setIsLoading(true);
-                    const sheetsSuccess = await loadFromSheets();
-                    if (!sheetsSuccess) {
-                        try {
-                            const saved = localStorage.getItem('carpoolHistory');
-                            if (saved) setWeekHistory(JSON.parse(saved));
-                        } catch (error) {
-                            console.error('LocalStorage load error:', error);
-                        }
-                    }
+                    if (CACHED_HISTORY) setIsRefreshing(true);
+                    await loadFromSheets();
+                    setIsRefreshing(false);
                     setIsLoading(false);
                 };
                 loadData();
@@ -732,37 +768,67 @@
                 return canvas;
             };
 
-            const sharePhoto = async () => {
-                setPhotoNote('');
-                setPhotoBusy(true);
+            // Render the PNG ahead of the tap, and again whenever what it depicts
+            // changes, so sharePhoto never has to await anything.
+            const photoSignature = showResults
+                ? weekKey + '|' + JSON.stringify(assignments) + '|' + JSON.stringify(selections)
+                  + '|' + JSON.stringify(NAME_MAP)
+                : '';
+            useEffect(() => {
+                if (!showResults) { setPhotoFile(null); return; }
+                let cancelled = false;
+                setPhotoFile(null);
                 try {
-                    const canvas = drawScheduleCanvas();
-                    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-                    if (!blob) throw new Error('render failed');
-                    const file = new File([blob], `raspored-${weekKey}.png`, { type: 'image/png' });
-
-                    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                        await navigator.share({ files: [file] });
-                    } else {
-                        // No file sharing (desktop, older Android): save the PNG instead.
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = file.name;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        setTimeout(() => URL.revokeObjectURL(url), 5000);
-                        setPhotoNote('Slika je spremljena na uređaj.');
-                    }
+                    drawScheduleCanvas().toBlob((blob) => {
+                        if (cancelled || !blob) return;
+                        setPhotoFile(new File([blob], `raspored-${weekKey}.png`, { type: 'image/png' }));
+                    }, 'image/png');
                 } catch (e) {
-                    if (!e || e.name !== 'AbortError') {   // AbortError = share sheet dismissed
-                        console.error('Share error:', e);
-                        setPhotoNote('Slanje nije uspjelo. Pokušaj ponovno.');
-                    }
-                } finally {
-                    setPhotoBusy(false);
+                    console.error('Photo pre-render error:', e);
                 }
+                return () => { cancelled = true; };
+            }, [photoSignature]);
+
+            const downloadPhoto = (file) => {
+                const url = URL.createObjectURL(file);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                setPhotoNote('Slika je spremljena na uređaj.');
+            };
+
+            // Deliberately NOT async. Android spends the tap's transient activation
+            // as soon as you await, which is why sharing failed when the PNG was
+            // rendered inside the handler. The file is already built by then.
+            const sharePhoto = () => {
+                const file = photoFile;
+                if (!file) {
+                    setPhotoNote('Slika se još priprema, pokušaj za koji trenutak.');
+                    return;
+                }
+                setPhotoNote('');
+                setPhotoErr('');
+
+                const canShareFiles = !!(navigator.share && navigator.canShare
+                                         && navigator.canShare({ files: [file] }));
+                if (!canShareFiles) {
+                    // Expected on desktop and older Android — not a failure.
+                    downloadPhoto(file);
+                    return;
+                }
+
+                navigator.share({ files: [file] })
+                    .then(() => setPhotoNote(''))
+                    .catch((e) => {
+                        if (e && e.name === 'AbortError') return;   // sheet dismissed by user
+                        console.error('Share error:', e);
+                        setPhotoErr(e && e.name ? e.name : 'Error');
+                        downloadPhoto(file);
+                    });
             };
 
             if (isLoading) {
@@ -925,6 +991,10 @@
                             </div>
                         )}
 
+                        {isRefreshing && (
+                            <p className="mt-2 text-[11px] text-[#6f6b68]">Osvježavam…</p>
+                        )}
+
                         {dataChangedSinceGeneration() && (
                             <div className="mt-4 border-2 border-[#ec3013] px-3 py-2">
                                 <p className="text-[12px] font-semibold text-[#ec3013] leading-snug">
@@ -971,13 +1041,16 @@
                         <button
                             type="button"
                             onClick={sharePhoto}
-                            disabled={photoBusy}
+                            disabled={!photoFile}
                             className="mt-5 min-h-12 w-full border border-[#201e1d] px-3 py-2 text-[12px] font-semibold leading-snug disabled:opacity-60"
                         >
-                            {photoBusy ? 'Pripremam…' : 'Podijeli fotku rasporeda na WhatsApp'}
+                            {photoFile ? 'Podijeli fotku rasporeda na WhatsApp' : 'Pripremam…'}
                         </button>
                         {photoNote && (
                             <p className="mt-2 text-[11px] text-[#6f6b68] leading-snug">{photoNote}</p>
+                        )}
+                        {photoErr && (
+                            <p className="mt-1 text-[10px] text-[#b9b7b4] leading-snug">Dijeljenje: {photoErr}</p>
                         )}
 
                         <button
@@ -1013,8 +1086,12 @@
 
                     <WeekNav />
 
-                    {lastEditLine() && (
-                        <p className="mt-3 text-[11px] text-[#6f6b68]">{lastEditLine()}</p>
+                    {(lastEditLine() || isRefreshing) && (
+                        <p className="mt-3 text-[11px] text-[#6f6b68]">
+                            {lastEditLine()}
+                            {lastEditLine() && isRefreshing ? ' · ' : ''}
+                            {isRefreshing ? 'Osvježavam…' : ''}
+                        </p>
                     )}
 
                     {askNewWeek && (
