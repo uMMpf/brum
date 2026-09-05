@@ -205,14 +205,23 @@
 
         const MY_FAMILY_KEY = 'carpoolMyFamily';
 
+        // THE schedule config — 2026/27 season. Day, start time, JS weekday index
+        // (Sun=0) and whether the afternoon-school footnote applies. `dow` lives here
+        // so the past-day lock reads from this list instead of a second hardcoded map.
+        // Storage keys are the `id` values; ids for kept days are unchanged, so
+        // existing data survives. 'pon' is gone: old Pon keys are simply never read.
         const PRACTICES = [
-            { id: 'pon', day: 'Pon', time: '20:00-21:15' },
-            { id: 'uto', day: 'Uto', time: '18:30-20:00' },
-            { id: 'cet', day: 'Čet', time: '18:30-20:00' },
-            { id: 'pet', day: 'Pet', time: '17:00-18:30' },
-            { id: 'sub', day: 'Sub', time: '12:00-13:30' }
+            { id: 'uto', day: 'Uto', time: '18:00-19:30', dow: 2, alt: false },
+            { id: 'sri', day: 'Sri', time: '19:30-20:30', dow: 3, alt: true },
+            { id: 'cet', day: 'Čet', time: '18:00-19:30', dow: 4, alt: true },
+            { id: 'pet', day: 'Pet', time: '17:00-18:30', dow: 5, alt: true },
+            { id: 'sub', day: 'Sub', time: '13:30-15:00', dow: 6, alt: false }
         ];
+        const PRACTICE_IDS = PRACTICES.map(p => p.id);
         const startTime = (p) => p.time.split('-')[0];
+        // Time as shown to the user: an asterisk ties the day to the footnote.
+        const timeLabel = (p) => startTime(p) + (p.alt ? '*' : '');
+        const ALT_NOTE = '* u tjednima s popodnevnom školom: pretkadeti 19:30 (Sri: Fran Galović)';
 
         const CHILD_IDS = ['c2', 'c1', 'c3'];   // fixed display order, unchanged
         const FAMILY_IDS = Object.keys(NAME_MAP.families);
@@ -473,9 +482,10 @@
                 if (weekStart.getTime() < nowWeekStart) return true;
                 if ((today === 6 && hour >= 15) || today === 0) return false;
 
-                const dayMap = { 'pon': 1, 'uto': 2, 'cet': 4, 'pet': 5, 'sub': 6 };
+                const practice = PRACTICES.find(p => p.id === practiceId);
+                if (!practice) return true;              // unknown/retired day (e.g. old 'pon')
                 if (today === 6 && practiceId === 'sub') return false;
-                return dayMap[practiceId] < today;
+                return practice.dow < today;
             };
 
             // Locked unless the hidden unlock is on (5 taps on the week range).
@@ -691,7 +701,8 @@
 
                 const canvas = document.createElement('canvas');
                 canvas.width = W;
-                canvas.height = PAD * 2 + HEAD + 24 + rows.length * ROW;
+                const NOTE_H = 44;   // footnote strip under the table
+                canvas.height = PAD * 2 + HEAD + 24 + rows.length * ROW + NOTE_H;
                 const g = canvas.getContext('2d');
 
                 let archivo = false;
@@ -735,7 +746,7 @@
                     g.fillText(r.p.day, COLS[0].x, y + 6);
                     g.font = `400 20px ${FF}`;
                     g.fillStyle = '#6f6b68';
-                    g.fillText(startTime(r.p), COLS[0].x, y + 42);
+                    g.fillText(timeLabel(r.p), COLS[0].x, y + 42);
 
                     if (r.kids.length) {
                         g.fillStyle = '#201e1d';
@@ -768,6 +779,11 @@
                     g.fillRect(PAD, y + ROW - 20, W - PAD * 2, 2);
                     y += ROW;
                 });
+
+                // same footnote as the screen, shrunk to fit the image width
+                g.fillStyle = '#6f6b68';
+                setFit(ALT_NOTE, 400, 22, W - PAD * 2);
+                g.fillText(ALT_NOTE, PAD, y + 2);
 
                 return canvas;
             };
@@ -1029,7 +1045,7 @@
                                 <div key={p.id} style={tableCols} className="py-2 border-b border-[#d6d4d2] text-[12px] items-start">
                                     <div>
                                         <div className="font-extrabold leading-tight">{p.day}</div>
-                                        <div className="text-[10px] text-[#6f6b68]">{startTime(p)}</div>
+                                        <div className="text-[10px] text-[#6f6b68]">{timeLabel(p)}</div>
                                     </div>
                                     <div className="break-words">
                                         {attending.length > 0
@@ -1041,6 +1057,8 @@
                                 </div>
                             );
                         })}
+
+                        <p className="mt-3 text-[10px] leading-snug text-[#6f6b68]">{ALT_NOTE}</p>
 
                         <button
                             type="button"
@@ -1121,7 +1139,9 @@
                     {/* R0 — overview matrix */}
                     <SectionLabel>Raspored</SectionLabel>
 
-                    {Object.keys(selections).length === 0 && (
+                    {/* Retired days (old 'pon' keys) are ignored on read, so a week
+                        holding only those still counts as empty. Nothing is migrated. */}
+                    {!Object.keys(selections).some(k => PRACTICE_IDS.indexOf(k.split('-')[1]) !== -1) && (
                         <p className="text-[12px] text-[#6f6b68] mb-3">Nitko još nije upisan 🏀</p>
                     )}
 
@@ -1130,7 +1150,7 @@
                         {PRACTICES.map(p => (
                             <div key={p.id} className="text-center leading-tight">
                                 <div className="text-[12px] font-extrabold">{p.day}</div>
-                                <div className="text-[10px] text-[#6f6b68]">{startTime(p)}</div>
+                                <div className="text-[10px] text-[#6f6b68]">{timeLabel(p)}</div>
                             </div>
                         ))}
                     </div>
@@ -1167,6 +1187,8 @@
                         <span>broj = obitelj koja može voziti</span>
                         <span className="text-[#ec3013] font-semibold">crveno = nema vozača</span>
                     </div>
+
+                    <p className="mt-2 text-[10px] leading-snug text-[#6f6b68]">{ALT_NOTE}</p>
 
                     <Rule />
 
@@ -1281,7 +1303,7 @@
                         <div key={p.id} style={editCols} className="mb-1 items-center">
                             <div className="pr-2">
                                 <div className="text-[15px] font-extrabold leading-tight">{p.day}</div>
-                                <div className="text-[12px] text-[#6f6b68]">{startTime(p)}</div>
+                                <div className="text-[12px] text-[#6f6b68]">{timeLabel(p)}</div>
                             </div>
                             <Toggle item={myChild} dayId={p.id} type="child" />
                             <Gap />
