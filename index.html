@@ -231,7 +231,6 @@
         // IDs only, so this is safe to commit.
         const FAMILY_CHILD = { f1: 'c2', f2: 'c1', f3: 'c3' };
         const childOfFamily = (familyId) => FAMILY_CHILD[familyId] || null;
-        const familyNumber = (familyId) => FAMILY_IDS.indexOf(familyId) + 1;
 
         const MONTHS = ['siječnja', 'veljače', 'ožujka', 'travnja', 'svibnja', 'lipnja',
                         'srpnja', 'kolovoza', 'rujna', 'listopada', 'studenoga', 'prosinca'];
@@ -878,25 +877,39 @@
                 </div>
             );
 
-            // Same mark scale as the overview rows above it.
-            const CoverageCell = ({ dayId, leg }) => {
-                const c = coverage(dayId, leg);
-                if (c.kind === 'none') {
+            // Per-family driving grid. For a family and day: O = can do odvoz, P = can do
+            // povratak, "O P" = both, empty = neither. Reads through driversOn(), so it
+            // follows whatever rule that applies and storage is untouched. A day nobody
+            // attends shows the faint dot in every family row, so the grid stays rectangular.
+            const FamilyDriveCell = ({ familyId, dayId }) => {
+                if (attendingOn(dayId).length === 0) {
                     return <div className="h-[30px] flex items-center justify-center text-[#b9b7b4] text-[12px]">·</div>;
                 }
-                if (c.kind === 'missing') {
-                    return (
-                        <div className="h-[30px] flex items-center justify-center">
-                            <div className="pebble w-5 h-5 bg-[#ec3013] flex items-center justify-center text-white text-[12px] font-extrabold leading-none">–</div>
-                        </div>
-                    );
-                }
-                // One or several families: plain ink numbers, no emphasis either way.
+                const legs = [];
+                if (driversOn(dayId, 'tamo').indexOf(familyId) !== -1) legs.push('O');
+                if (driversOn(dayId, 'nazad').indexOf(familyId) !== -1) legs.push('P');
                 return (
-                    <div className="h-[30px] flex items-center justify-center gap-1.5">
-                        {c.drivers.map(f => (
-                            <span key={f} className="text-[#201e1d] text-[13px] font-extrabold leading-none">{familyNumber(f)}</span>
-                        ))}
+                    <div className="h-[30px] flex items-center justify-center text-[13px] font-extrabold leading-none text-[#201e1d] whitespace-nowrap">
+                        {legs.join(' ')}
+                    </div>
+                );
+            };
+
+            // Red flag per leg nobody can drive on a training day: –O (odvoz), –P (povratak).
+            // Same red cell as before; when both show, minmax lets the pair shrink to fit a
+            // narrow column (36.8px at 320px) instead of overflowing.
+            const NoDriverCell = ({ dayId }) => {
+                const gaps = [['tamo', 'O'], ['nazad', 'P']]
+                    .filter(([leg]) => coverage(dayId, leg).kind === 'missing')
+                    .map(([, mark]) => mark);
+                if (gaps.length === 0) return <div className="h-[30px]"></div>;
+                return (
+                    <div className="h-[30px] flex items-center justify-center">
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${gaps.length}, minmax(0, 20px))`, columnGap: '1px' }}>
+                            {gaps.map(mark => (
+                                <div key={mark} className="pebble h-5 bg-[#ec3013] flex items-center justify-center text-white text-[12px] font-extrabold leading-none whitespace-nowrap">–{mark}</div>
+                            ))}
+                        </div>
                     </div>
                 );
             };
@@ -1166,15 +1179,20 @@
                         </div>
                     ))}
 
-                    {/* R1 — coverage rows, one per leg (delta vs prototype) */}
+                    {/* R1 — who can drive: one row per family, in MOJA OBITELJ order,
+                        then a row flagging legs nobody can cover */}
                     <div className="border-t-2 border-[#201e1d] mt-2 pt-2">
-                        <div style={gridCols} className="mb-0.5 items-center">
-                            <div className="text-[13px] font-extrabold truncate pr-1">Odvoz</div>
-                            {PRACTICES.map(p => <CoverageCell key={p.id} dayId={p.id} leg="tamo" />)}
-                        </div>
+                        {FAMILY_IDS.map(familyId => (
+                            <div key={familyId} style={gridCols} className="mb-0.5 items-center">
+                                <div className="text-[13px] font-extrabold truncate pr-1" title={NAME_MAP.families[familyId]}>
+                                    {NAME_MAP.families[familyId]}
+                                </div>
+                                {PRACTICES.map(p => <FamilyDriveCell key={p.id} familyId={familyId} dayId={p.id} />)}
+                            </div>
+                        ))}
                         <div style={gridCols} className="items-center">
-                            <div className="text-[13px] font-extrabold truncate pr-1">Povratak</div>
-                            {PRACTICES.map(p => <CoverageCell key={p.id} dayId={p.id} leg="nazad" />)}
+                            <div className="text-[11px] font-extrabold leading-tight text-[#ec3013] pr-1">Nema vozača</div>
+                            {PRACTICES.map(p => <NoDriverCell key={p.id} dayId={p.id} />)}
                         </div>
                     </div>
 
@@ -1184,7 +1202,8 @@
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#201e1d] inline-block"></span>dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#e6e5e3] inline-block"></span>ne dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 border border-dashed border-[#b9b7b4] inline-block"></span>još prazno</span>
-                        <span>broj = obitelj koja može voziti</span>
+                        <span>O = odvoz</span>
+                        <span>P = povratak</span>
                         <span className="text-[#ec3013] font-semibold">crveno = nema vozača</span>
                     </div>
 
