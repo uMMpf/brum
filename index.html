@@ -510,7 +510,17 @@
 
             const toggleSelection = (item, dayId, type) => {
                 const key = `${item}-${dayId}-${type}`;
-                const newSelections = { ...selections, [key]: !selections[key] };
+                const newSelections = { ...selections };
+                if (type === 'child') {
+                    // DOLAZI cycles empty -> dolazi -> ne dolazi -> empty. Empty has always
+                    // been an absent key, so the last step deletes it: no new value type.
+                    const v = selections[key];
+                    if (v === true) newSelections[key] = false;
+                    else if (v === false) delete newSelections[key];
+                    else newSelections[key] = true;
+                } else {
+                    newSelections[key] = !selections[key];   // ODVOZ / POVRATAK stay two-state
+                }
                 updateWeekData(newSelections, assignments, lastGenerated);
             };
 
@@ -525,8 +535,14 @@
             const attendingOn = (dayId) =>
                 CHILD_IDS.filter(c => selections[`${c}-${dayId}-child`] === true);
 
+            // A family counts as a driver only if it ticked the leg AND its own child is not
+            // explicitly "ne dolazi" that day. The tick stays in storage, it just doesn't count.
+            const familyDrives = (familyId, dayId, leg) =>
+                selections[`${familyId}-${dayId}-${leg}`] === true &&
+                selections[`${childOfFamily(familyId)}-${dayId}-child`] !== false;
+
             const driversOn = (dayId, leg) =>
-                FAMILY_IDS.filter(f => selections[`${f}-${dayId}-${leg}`] === true);
+                FAMILY_IDS.filter(f => familyDrives(f, dayId, leg));
 
             // none = nobody coming, missing = nema vozača, ok = at least one driver.
             // Several families on one leg is NOT a problem — it is the input the
@@ -872,7 +888,7 @@
             const OverviewCell = ({ state }) => (
                 <div className="h-[30px] flex items-center justify-center">
                     {state === 'on' && <div className="w-5 h-5 bg-[#201e1d]"></div>}
-                    {state === 'off' && <div className="w-5 h-5 bg-[#e6e5e3]"></div>}
+                    {state === 'off' && <div className="w-5 h-5 bg-[#e6e5e3] flex items-center justify-center text-[#201e1d] text-[12px] font-extrabold leading-none">×</div>}
                     {state === 'empty' && <div className="w-5 h-5 border border-dashed border-[#b9b7b4]"></div>}
                 </div>
             );
@@ -918,8 +934,37 @@
             // sharing a leg with another family is normal, not an error.
             const Toggle = ({ item, dayId, type }) => {
                 const key = `${item}-${dayId}-${type}`;
-                const on = selections[key] === true;
+                const value = selections[key];
                 const locked = isLocked(dayId);
+
+                if (type === 'child') {
+                    // Three distinct looks so "ne dolazi" can never be set by accident unseen.
+                    const state = value === true ? 'on' : value === false ? 'off' : 'empty';
+                    const look = {
+                        empty: { cls: 'border border-dashed border-[#b9b7b4] bg-[#efeeec] text-[#b9b7b4]', icon: '✓', label: '?',         spoken: 'još prazno' },
+                        on:    { cls: 'border border-[#201e1d] bg-[#201e1d] text-white',                icon: '✓', label: 'dolazi',    spoken: 'dolazi' },
+                        off:   { cls: 'border border-[#b9b7b4] bg-[#e6e5e3] text-[#201e1d]',             icon: '×', label: 'ne dolazi', spoken: 'ne dolazi' }
+                    }[state];
+                    return (
+                        <button
+                            type="button"
+                            onClick={() => { if (!locked) toggleSelection(item, dayId, type); }}
+                            disabled={locked}
+                            aria-label={`Dijete: ${look.spoken}`}
+                            className={`h-12 w-full flex flex-col items-center justify-center gap-0.5 ${look.cls} ${locked ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                            <span className="text-[16px] font-extrabold leading-none">{look.icon}</span>
+                            <span className="text-[9px] font-semibold leading-none whitespace-nowrap">{look.label}</span>
+                        </button>
+                    );
+                }
+
+                // ODVOZ / POVRATAK: two-state. While this family's child is "ne dolazi" the
+                // button is suspended: drawn like an empty button and unclickable, whatever is
+                // stored. The stored tick is kept and reappears on "dolazi" or "?".
+                const suspended = selections[`${childOfFamily(item)}-${dayId}-child`] === false;
+                const on = value === true && !suspended;      // what the button shows
+                const disabled = locked || suspended;
 
                 let cls = 'border border-[#d6d4d2] bg-[#efeeec] text-[#b9b7b4]';
                 if (on) cls = 'bg-[#201e1d] text-white border border-[#201e1d]';
@@ -927,10 +972,10 @@
                 return (
                     <button
                         type="button"
-                        onClick={() => { if (!locked) toggleSelection(item, dayId, type); }}
-                        disabled={locked}
+                        onClick={() => { if (!disabled) toggleSelection(item, dayId, type); }}
+                        disabled={disabled}
                         aria-pressed={on}
-                        className={`h-12 w-full flex items-center justify-center text-[18px] font-extrabold ${cls} ${locked ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        className={`h-12 w-full flex items-center justify-center text-[18px] font-extrabold ${cls} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                     >
                         ✓
                     </button>
@@ -1200,7 +1245,7 @@
                         the items so the "·" dividers are not needed to fit. */}
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-x-1.5 gap-y-1 text-[10px] leading-none text-[#6f6b68] [&>span]:whitespace-nowrap">
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#201e1d] inline-block"></span>dolazi</span>
-                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#e6e5e3] inline-block"></span>ne dolazi</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#e6e5e3] inline-flex items-center justify-center text-[#201e1d] text-[8px] font-extrabold leading-none">×</span>ne dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 border border-dashed border-[#b9b7b4] inline-block"></span>još prazno</span>
                         <span>O = odvoz</span>
                         <span>P = povratak</span>
@@ -1292,7 +1337,7 @@
                     {/* Nudge only while there is something to do: at least one day
                         editable and nothing ticked yet for this family. */}
                     {PRACTICES.some(p => !isLocked(p.id)) &&
-                     PRACTICES.every(p => selections[`${myChild}-${p.id}-child`] !== true
+                     PRACTICES.every(p => selections[`${myChild}-${p.id}-child`] === undefined
                                        && selections[`${myFamily}-${p.id}-tamo`] !== true
                                        && selections[`${myFamily}-${p.id}-nazad`] !== true) && (
                         <p className="text-[12px] text-[#6f6b68] -mt-2 mb-3">Odaberi termine:</p>
