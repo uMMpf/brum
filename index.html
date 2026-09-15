@@ -866,7 +866,7 @@
                 );
             }
 
-            const gridCols = { display: 'grid', gridTemplateColumns: '84px repeat(5, 1fr)', gap: '4px' };
+            const gridCols = { display: 'grid', gridTemplateColumns: '63px repeat(5, 1fr)', gap: '4px' };
             // Spacer column separates the DIJETE group from the OBITELJ VOZI group.
             const editCols = { display: 'grid', gridTemplateColumns: '1fr 68px 14px 68px 68px', gap: '4px' };
             const Gap = () => <div className="justify-self-center w-px h-full bg-[#d6d4d2]"></div>;
@@ -881,39 +881,31 @@
                 </div>
             );
 
-            // Per-family driving grid. For a family and day: O = can do odvoz, P = can do
-            // povratak, "O P" = both, empty = neither. Reads through driversOn(), so it
-            // follows whatever rule that applies and storage is untouched. A day nobody
-            // attends shows the faint dot in every family row, so the grid stays rectangular.
-            const FamilyDriveCell = ({ familyId, dayId }) => {
-                if (attendingOn(dayId).length === 0) {
+            // Who can drive a leg on a day: family names, one per line, in MOJA OBITELJ order.
+            // No training -> faint dot. Training but nobody for this leg -> red "–".
+            // Label column is 63px, the narrowest that keeps "Povratak" at 13px, so each day column
+            // is 52px at 375px and the widest real name fits whole at 11px. Below ~340px the size
+            // eases to the 10px floor; if a name still doesn't fit it ellipsizes (min-w-0) rather
+            // than wrapping or pushing the grid out of alignment.
+            const LegCell = ({ dayId, leg }) => {
+                const c = coverage(dayId, leg);
+                if (c.kind === 'none') {
                     return <div className="h-[30px] flex items-center justify-center text-[#b9b7b4] text-[12px]">·</div>;
                 }
-                const legs = [];
-                if (driversOn(dayId, 'tamo').indexOf(familyId) !== -1) legs.push('O');
-                if (driversOn(dayId, 'nazad').indexOf(familyId) !== -1) legs.push('P');
-                return (
-                    <div className="h-[30px] flex items-center justify-center text-[13px] font-extrabold leading-none text-[#201e1d] whitespace-nowrap">
-                        {legs.join(' ')}
-                    </div>
-                );
-            };
-
-            // Red flag per leg nobody can drive on a training day: –O (odvoz), –P (povratak).
-            // Same red cell as before; when both show, minmax lets the pair shrink to fit a
-            // narrow column (36.8px at 320px) instead of overflowing.
-            const NoDriverCell = ({ dayId }) => {
-                const gaps = [['tamo', 'O'], ['nazad', 'P']]
-                    .filter(([leg]) => coverage(dayId, leg).kind === 'missing')
-                    .map(([, mark]) => mark);
-                if (gaps.length === 0) return <div className="h-[30px]"></div>;
-                return (
-                    <div className="h-[30px] flex items-center justify-center">
-                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${gaps.length}, minmax(0, 20px))`, columnGap: '1px' }}>
-                            {gaps.map(mark => (
-                                <div key={mark} className="pebble h-5 bg-[#ec3013] flex items-center justify-center text-white text-[12px] font-extrabold leading-none whitespace-nowrap">–{mark}</div>
-                            ))}
+                if (c.kind === 'missing') {
+                    return (
+                        <div className="h-[30px] flex items-center justify-center">
+                            <div className="pebble w-5 h-5 bg-[#ec3013] flex items-center justify-center text-white text-[12px] font-extrabold leading-none">–</div>
                         </div>
+                    );
+                }
+                return (
+                    <div className="min-w-0 min-h-[30px] py-1 flex flex-col items-center justify-center">
+                        {c.drivers.map(f => (
+                            <div key={f} style={{ fontSize: 'clamp(10px, 2.95vw, 11px)' }} className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-bold leading-tight text-[#201e1d]">
+                                {NAME_MAP.families[f]}
+                            </div>
+                        ))}
                     </div>
                 );
             };
@@ -1187,20 +1179,15 @@
                         </div>
                     ))}
 
-                    {/* R1 — who can drive: one row per family, in MOJA OBITELJ order,
-                        then a row flagging legs nobody can cover */}
+                    {/* R1 — who can drive each leg, as family names */}
                     <div className="border-t-2 border-[#201e1d] mt-2 pt-2">
-                        {FAMILY_IDS.map(familyId => (
-                            <div key={familyId} style={gridCols} className="mb-0.5 items-center">
-                                <div className="text-[13px] font-extrabold truncate pr-1" title={NAME_MAP.families[familyId]}>
-                                    {NAME_MAP.families[familyId]}
-                                </div>
-                                {PRACTICES.map(p => <FamilyDriveCell key={p.id} familyId={familyId} dayId={p.id} />)}
-                            </div>
-                        ))}
+                        <div style={gridCols} className="mb-0.5 items-center">
+                            <div className="text-[13px] font-extrabold truncate pr-1">Odvoz</div>
+                            {PRACTICES.map(p => <LegCell key={p.id} dayId={p.id} leg="tamo" />)}
+                        </div>
                         <div style={gridCols} className="items-center">
-                            <div className="text-[11px] font-extrabold leading-tight text-[#ec3013] pr-1">Nema vozača</div>
-                            {PRACTICES.map(p => <NoDriverCell key={p.id} dayId={p.id} />)}
+                            <div className="text-[13px] font-extrabold truncate pr-1">Povratak</div>
+                            {PRACTICES.map(p => <LegCell key={p.id} dayId={p.id} leg="nazad" />)}
                         </div>
                     </div>
 
@@ -1209,8 +1196,6 @@
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-x-1.5 gap-y-1 text-[10px] leading-none text-[#6f6b68] [&>span]:whitespace-nowrap">
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 bg-[#201e1d] inline-block"></span>dolazi</span>
                         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 shrink-0 border border-dashed border-[#b9b7b4] inline-block"></span>još prazno</span>
-                        <span>O = odvoz</span>
-                        <span>P = povratak</span>
                         <span className="text-[#ec3013] font-semibold">crveno = nema vozača</span>
                     </div>
 
